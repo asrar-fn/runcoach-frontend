@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_storage_service.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart'; // adjust path as needed
 
 class Message {
   final String id;
@@ -58,7 +59,7 @@ class _MessagesPageState extends State<MessagesPage> {
   bool _isSending = false;
   String? _error;
 
-  static const String _baseUrl = 'http://localhost:5000/api';
+  static const String _baseUrl = '${ApiConfig.baseUrl}/api';
 
   @override
   void initState() {

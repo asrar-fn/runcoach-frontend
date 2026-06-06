@@ -11,6 +11,7 @@ import '../widgets/athlete_performance_tile.dart';
 import 'profile_settings_screen.dart';
 import 'coach_messages_page.dart';
 import '../widgets/assign_workout_bottom_sheet.dart';
+import '../config/api_config.dart'; // adjust path as needed
 
 // ── App-wide gradient palette ────────────────────────────────────────────────
 const _kGradientStart = Color(0xFF1976D2);
@@ -70,7 +71,7 @@ class _CoachDashboardState extends State<CoachDashboard> {
   AthletePerformanceService? _performanceService;
   bool _isCurrentUserCoach = true;
 
-  static const String _apiBaseUrl = 'http://localhost:5000';
+  static const String _apiBaseUrl = '${ApiConfig.baseUrl}';
 
   /// Cache: athleteId → PerformanceLevel (same data the tile's badge uses).
   /// Populated in the background after athletes load.

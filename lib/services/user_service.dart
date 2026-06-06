@@ -1,9 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/athlete.dart';
+import '../config/api_config.dart'; // adjust path as needed
 
 class UserService {
-  final String _baseUrl = 'http://localhost:5000';
+  final String _baseUrl = '${ApiConfig.baseUrl}';
   final String _coachId;
   final String _authToken;
 

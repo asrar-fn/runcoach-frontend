@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../services/auth_storage_service.dart';
 import './AthleteDashboard.dart' show AppState, AppColors;
 import '../models/strava_activites.dart';
+import '../config/api_config.dart'; // adjust path as needed
 
 // ── Platform gradient (matches AthleteDashboard glossyGradient) ──────────────
 const _kGradient = LinearGradient(
@@ -58,7 +59,7 @@ class _StravaPageState extends State<StravaPage>
     final authData = await AuthStorageService.getAuthData();
     final token = authData['authToken'];
     final url =
-    Uri.parse('http://localhost:5000/api/strava/connect?token=$token');
+    Uri.parse('${ApiConfig.baseUrl}/api/strava/connect?token=$token');
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
       await Future.delayed(const Duration(seconds: 2));
@@ -93,7 +94,7 @@ class _StravaPageState extends State<StravaPage>
       final authData = await AuthStorageService.getAuthData();
       final token = authData['authToken'];
       await http.delete(
-        Uri.parse('http://localhost:5000/api/strava/disconnect'),
+        Uri.parse('${ApiConfig.baseUrl}/api/strava/disconnect'),
         headers: {'Authorization': 'Bearer $token'},
       );
       await appState.checkStravaStatus();

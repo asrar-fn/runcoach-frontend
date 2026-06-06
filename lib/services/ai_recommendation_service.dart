@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../services/auth_storage_service.dart';
+import '../config/api_config.dart'; // adjust path as needed
 
 class PlanRecommendation {
   final String currentLevel;      // e.g. "5K Advanced"
@@ -50,7 +51,7 @@ class AiRecommendationService {
       final token = authData['authToken'];
 
       final response = await http.post(
-        Uri.parse('http://localhost:5000/api/ai/recommend-plan'),
+        Uri.parse('${ApiConfig.baseUrl}/api/ai/recommend-plan'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

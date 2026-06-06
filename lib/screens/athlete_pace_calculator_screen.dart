@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_storage_service.dart';
 import './AthleteDashboard.dart';
+import '../config/api_config.dart'; // adjust path as needed
 
 class AthletePaceCalculatorScreen extends StatefulWidget {
   final String athleteId;
@@ -40,7 +41,7 @@ class _AthletePaceCalculatorScreenState
 
       final response = await http.get(
         Uri.parse(
-            'http://localhost:5000/api/activities/athlete/${widget.athleteId}'),
+            '${ApiConfig.baseUrl}/api/activities/athlete/${widget.athleteId}'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

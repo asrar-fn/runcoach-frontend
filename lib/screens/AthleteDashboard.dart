@@ -21,6 +21,7 @@
     import '../models/strava_activites.dart';
     import './strava_page.dart';
     import '../widgets/unified_ai_analysis_card.dart';
+    import '../config/api_config.dart'; // adjust path as needed
 
     // --- Data Models (equivalent to your API response types) ---
     class Me {
@@ -230,7 +231,7 @@
           final token = authData['authToken'];
 
           final response = await http.get(
-            Uri.parse('http://localhost:5000/api/auth/me'),
+            Uri.parse('${ApiConfig.baseUrl}/api/auth/me'),
             headers: {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer $token',
@@ -273,7 +274,7 @@
           }
 
           final response = await http.get(
-            Uri.parse('http://localhost:5000/api/assignments/athlete/$athleteId'),
+            Uri.parse('${ApiConfig.baseUrl}/api/assignments/athlete/$athleteId'),
             headers: {'Authorization': 'Bearer $token'},
           );
 
@@ -303,7 +304,7 @@
           final userId = _me?.id;
 
           final response = await http.get(
-            Uri.parse('http://localhost:5000/api/activities/athlete/$userId'),
+            Uri.parse('${ApiConfig.baseUrl}/api/activities/athlete/$userId'),
             headers: {
               'Authorization': 'Bearer $token',
             },
@@ -333,7 +334,7 @@
           final token = authData['authToken'];
 
           final response = await http.post(
-            Uri.parse('http://localhost:5000/api/activities'),
+            Uri.parse('${ApiConfig.baseUrl}/api/activities'),
             headers: {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer $token',
@@ -370,7 +371,7 @@
           final token = authData['authToken'];
 
           final response = await http.get(
-            Uri.parse('http://localhost:5000/api/goals/me'),
+            Uri.parse('${ApiConfig.baseUrl}/api/goals/me'),
             headers: {
               'Authorization': 'Bearer $token',
             },
@@ -401,7 +402,7 @@
           final authData = await AuthStorageService.getAuthData();
           final token = authData['authToken'];
           await http.post(
-            Uri.parse('http://localhost:5000/api/goals'),
+            Uri.parse('${ApiConfig.baseUrl}/api/goals'),
             headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
             body: jsonEncode(goal.toJson()),
           );
@@ -420,7 +421,7 @@
           final authData = await AuthStorageService.getAuthData();
           final token = authData['authToken'];
           final response = await http.get(
-            Uri.parse('http://localhost:5000/api/strava/status'),
+            Uri.parse('${ApiConfig.baseUrl}/api/strava/status'),
             headers: {'Authorization': 'Bearer $token'},
           );
           if (response.statusCode == 200) {
@@ -449,7 +450,7 @@
           final token = authData['authToken'];
 
           final response = await http.post(
-            Uri.parse('http://localhost:5000/api/strava/sync-to-db'),
+            Uri.parse('${ApiConfig.baseUrl}/api/strava/sync-to-db'),
             headers: {
               'Authorization': 'Bearer $token',
               'Content-Type': 'application/json',
@@ -479,7 +480,7 @@
           final authData = await AuthStorageService.getAuthData();
           final token = authData['authToken'];
           final response = await http.get(
-            Uri.parse('http://localhost:5000/api/strava/activities'),
+            Uri.parse('${ApiConfig.baseUrl}/api/strava/activities'),
             headers: {'Authorization': 'Bearer $token'},
           );
           if (response.statusCode == 200) {
@@ -507,8 +508,8 @@
 
           // Use Strava endpoint if connected + has runs, otherwise use DB
           final endpoint = (_stravaConnected && _stravaActivities.isNotEmpty)
-              ? 'http://localhost:5000/api/ai/strava-analysis'
-              : 'http://localhost:5000/api/ai/recommend-plan';
+              ? '${ApiConfig.baseUrl}/api/ai/strava-analysis'
+              : '${ApiConfig.baseUrl}/api/ai/recommend-plan';
 
           final response = await http.post(
             Uri.parse(endpoint),
@@ -795,7 +796,7 @@
                           final token = authData['authToken'];
                           await http.delete(
                             Uri.parse(
-                                'http://localhost:5000/api/strava/disconnect'),
+                                '${ApiConfig.baseUrl}/api/strava/disconnect'),
                             headers: {'Authorization': 'Bearer $token'},
                           );
                           await appState.checkStravaStatus();

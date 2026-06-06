@@ -6,6 +6,7 @@ import 'dart:convert';
 import '../models/athlete.dart';
 import '../services/auth_storage_service.dart';
 import './coach_athlete_calendar.dart';
+import '../config/api_config.dart'; // adjust path as needed
 
 // ─── Models ───────────────────────────────────────────────────────────────────
 
@@ -224,7 +225,7 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
       final token = await _getToken();
       final res = await http.get(
         Uri.parse(
-            'http://localhost:5000/api/assignments/athlete/${widget.athleteId}'),
+            '${ApiConfig.baseUrl}/api/assignments/athlete/${widget.athleteId}'),
         headers: {'Authorization': 'Bearer $token'},
       );
       if (res.statusCode == 200) {
@@ -251,7 +252,7 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
       final token = await _getToken();
       final res = await http.get(
         Uri.parse(
-            'http://localhost:5000/api/activities/athlete/${widget.athleteId}'),
+            '${ApiConfig.baseUrl}/api/activities/athlete/${widget.athleteId}'),
         headers: {'Authorization': 'Bearer $token'},
       );
       if (res.statusCode == 200) {
@@ -273,7 +274,7 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
       final token = await _getToken();
       await http.put(
         Uri.parse(
-            'http://localhost:5000/api/assignments/${_popupAssignment!.id}'),
+            '${ApiConfig.baseUrl}/api/assignments/${_popupAssignment!.id}'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -304,7 +305,7 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
     try {
       final token = await _getToken();
       final res = await http.delete(
-        Uri.parse('http://localhost:5000/api/assignments/$id'),
+        Uri.parse('${ApiConfig.baseUrl}/api/assignments/$id'),
         headers: {'Authorization': 'Bearer $token'},
       );
       if (res.statusCode == 200 || res.statusCode == 204) {

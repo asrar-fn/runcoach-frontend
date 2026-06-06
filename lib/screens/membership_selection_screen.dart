@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-
+import '../config/api_config.dart'; // adjust path as needed
 import '../services/auth_storage_service.dart';
 import 'dummy_payment_screen.dart';
 import 'select_plan_screen.dart';
@@ -19,7 +19,7 @@ class MembershipSelectionScreen extends StatelessWidget {
     final userId = authData['userId'] ?? authData['athleteId'];
 
     await http.patch(
-      Uri.parse('http://localhost:5000/api/auth/update-plan'),
+      Uri.parse('${ApiConfig.baseUrl}/api/auth/update-plan'),
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',

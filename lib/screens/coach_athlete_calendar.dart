@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import '../services/auth_storage_service.dart';
+import '../config/api_config.dart'; // adjust path as needed
 
 // ─── Local models (no cross-file imports needed) ──────────────────────────────
 
@@ -189,11 +190,11 @@ class _CoachAthleteCalendarState extends State<CoachAthleteCalendar>
 
       final results = await Future.wait([
         http.get(
-          Uri.parse('http://localhost:5000/api/assignments/athlete/${widget.athleteId}'),
+          Uri.parse('${ApiConfig.baseUrl}/api/assignments/athlete/${widget.athleteId}'),
           headers: {'Authorization': 'Bearer $token'},
         ),
         http.get(
-          Uri.parse('http://localhost:5000/api/activities/athlete/${widget.athleteId}'),
+          Uri.parse('${ApiConfig.baseUrl}/api/activities/athlete/${widget.athleteId}'),
           headers: {'Authorization': 'Bearer $token'},
         ),
       ]);

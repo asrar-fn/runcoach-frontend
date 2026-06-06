@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 import '../services/auth_storage_service.dart';
 import 'dummy_payment_screen.dart';
+import '../config/api_config.dart'; // adjust path as needed
 
 // ── Riverpod provider
 final coachesProvider = FutureProvider<List<dynamic>>((ref) async {
@@ -76,7 +77,7 @@ class _CoachSelectionScreenState
       });
 
       final response = await http.patch(
-        Uri.parse('http://localhost:5000/api/auth/update-plan'),
+        Uri.parse('${ApiConfig.baseUrl}/api/auth/update-plan'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

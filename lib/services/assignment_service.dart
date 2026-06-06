@@ -2,10 +2,11 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../services/auth_storage_service.dart';
+import '../config/api_config.dart'; // adjust path as needed
 
 class AssignmentService {
   // ✅ Replace with your actual API base URL
-  static const String _baseUrl = 'http://localhost:5000/api';
+  static const String _baseUrl = '${ApiConfig.baseUrl}/api';
 
   /// Create a new assignment (coach → athlete)
   static Future<Map<String, dynamic>> createAssignment({

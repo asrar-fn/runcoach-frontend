@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../services/auth_storage_service.dart';
+import '../config/api_config.dart'; // adjust path as needed
 
 class Message {
   final String id;
@@ -55,7 +56,7 @@ class _CoachMessagesPageState extends State<CoachMessagesPage> {
 
   static const Color _primary = Color(0xFF2575FC);
   static const Color _accent = Color(0xFFF7941D);
-  static const String _baseUrl = 'http://localhost:5000/api';
+  static const String _baseUrl = '${ApiConfig.baseUrl}/api';
 
   List<Message> _conversation = [];
   bool _isLoading = true;
