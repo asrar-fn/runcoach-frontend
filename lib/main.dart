@@ -1,0 +1,180 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+// Import your screens
+import 'screens/landing_screen.dart';
+import 'screens/select_plan_screen.dart';
+import 'screens/sign_in_screen.dart';
+import 'screens/coach_selection_screen.dart'; // NEW: Import CoachSelectionScreen
+import 'screens/register_screen.dart';        // NEW: Import RegisterScreen
+
+void main() {
+  runApp(
+    const ProviderScope(
+      child: MyApp(),
+    ),
+  );
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'RunCoach',
+      debugShowCheckedModeBanner: false,
+      theme: _buildFitCoachTheme(), // Apply the custom theme here
+      home: const LandingScreen(), // Start with LandingScreen as defined
+      routes: {
+        // Your existing routes
+        '/select-plan': (context) => const SelectPlanScreen(),
+        '/SignInScreen': (context) => const SignInScreen(),
+        // Note: The /athlete-register and /coach-selection routes will be handled by onGenerateRoute
+        // If you were to have a generic '/register' route without arguments, it could go here.
+        // For now, we're relying on onGenerateRoute for dynamic argument passing.
+      },
+      // Use onGenerateRoute for routes that require arguments
+      onGenerateRoute: (settings) {
+        if (settings.name == '/coach-selection') {
+          // Arguments for CoachSelectionScreen is the selectedPlanDistance (a String)
+          final String? selectedPlanDistance = settings.arguments as String?;
+          return MaterialPageRoute(
+            builder: (context) => CoachSelectionScreen(selectedPlanDistance: selectedPlanDistance),
+          );
+        } else if (settings.name == '/athlete-register') {
+          // Arguments for RegisterScreen is a Map
+          final Map<String, dynamic>? args = settings.arguments as Map<String, dynamic>?;
+          return MaterialPageRoute(
+            builder: (context) => RegisterScreen(
+              initialUserType: args?['initialUserType'],
+              selectedPlan: args?['selectedPlan'],
+              selectedCoachId: args?['selectedCoachId'],
+            ),
+          );
+        }
+        // Let the regular `routes` map handle other named routes
+        // If the route is not found in `routes` or `onGenerateRoute`, it will fall back to null
+        // or a default builder if you define `unknownRoute`.
+        return null;
+      },
+    );
+  }
+}
+
+// --- Custom Theme Definition for FitCoach (based on first screenshot) ---
+ThemeData _buildFitCoachTheme() {
+  final ThemeData base = ThemeData.light();
+
+  const Color primaryBlue = Color(0xFF4285F4);
+  const Color secondaryOrange = Color(0xFFFF964F);
+  const Color lightBackground = Color(0xFFF0F4F8);
+  const Color darkerSurface = Color(0xFFFFFFFF);
+  const Color onSurfaceDark = Color(0xFF333333);
+  const Color onSurfaceMedium = Color(0xFF666666);
+  const Color buttonTextColor = Colors.white;
+  const Color appBarBackground = Colors.white;
+  const Color appBarContentColor = Color(0xFF333333);
+  const Color outlineBorderColor = Color(0xFFD3DCE6);
+
+  return base.copyWith(
+    colorScheme: ColorScheme.light(
+      primary: primaryBlue,
+      secondary: secondaryOrange,
+      surface: darkerSurface,
+      background: lightBackground,
+      onPrimary: buttonTextColor,
+      onSecondary: buttonTextColor,
+      onSurface: onSurfaceDark,
+      onBackground: onSurfaceDark,
+      error: Colors.red.shade700,
+      onError: buttonTextColor,
+    ),
+
+    appBarTheme: const AppBarTheme(
+      backgroundColor: appBarBackground,
+      elevation: 0,
+      foregroundColor: appBarContentColor,
+      titleTextStyle: TextStyle(
+        color: appBarContentColor,
+        fontSize: 22,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 1.2,
+      ),
+    ),
+
+    textTheme: GoogleFonts.poppinsTextTheme(
+      base.textTheme.apply(
+        bodyColor: onSurfaceMedium,
+        displayColor: onSurfaceDark,
+      ),
+    ).copyWith(
+      displaySmall: GoogleFonts.poppins(
+        fontSize: 36,
+        fontWeight: FontWeight.w900,
+        color: onSurfaceDark,
+      ),
+      headlineMedium: GoogleFonts.poppins(
+        fontSize: 28,
+        fontWeight: FontWeight.w900,
+        color: onSurfaceDark,
+      ),
+      titleMedium: GoogleFonts.poppins(
+        fontSize: 18,
+        fontWeight: FontWeight.w500,
+        color: onSurfaceMedium,
+      ),
+      labelLarge: GoogleFonts.poppins(
+        fontSize: 14,
+        fontWeight: FontWeight.bold,
+        color: buttonTextColor,
+      ),
+      headlineSmall: GoogleFonts.poppins(
+        fontSize: 24,
+        fontWeight: FontWeight.w700,
+        color: onSurfaceDark,
+      ),
+      bodyLarge: GoogleFonts.poppins(
+        fontSize: 16,
+        color: onSurfaceMedium,
+      ),
+      bodyMedium: GoogleFonts.poppins(
+        fontSize: 14,
+        color: onSurfaceMedium,
+      ),
+    ),
+
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: primaryBlue,
+        foregroundColor: buttonTextColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
+        elevation: 5,
+        shadowColor: primaryBlue.withOpacity(0.4),
+      ),
+    ),
+
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(color: Colors.white.withOpacity(0.6), width: 2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 18, color: Colors.white),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
+        foregroundColor: Colors.white,
+        backgroundColor: Colors.white.withOpacity(0.12),
+        elevation: 5,
+        shadowColor: Colors.black.withOpacity(0.3),
+      ),
+    ),
+
+    cardTheme: CardThemeData(
+      elevation: 15,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+      shadowColor: Colors.black.withOpacity(0.25),
+      color: darkerSurface,
+    ),
+  );
+}

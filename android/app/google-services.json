@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "374205829222",
+    "project_id": "runcoach-494009",
+    "storage_bucket": "runcoach-494009.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:374205829222:android:d7c4c13fcdcb91f830dda7",
+        "android_client_info": {
+          "package_name": "com.example.runcoach"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCwBRRuZ0Dk4ollDTyCGkjtljDU92oVRLc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
