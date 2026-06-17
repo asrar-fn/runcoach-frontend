@@ -419,7 +419,7 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
               ),
               const SizedBox(width: 12),
               Text(
-                'RunCoach',
+                'PeakForm',
                 style: textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w900,
                   color: Colors.white,
@@ -431,7 +431,7 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
           ),
           const SizedBox(height: 24),
           Text(
-            'RunCoach empowers every runner to push their limits and achieve greatness. Join our community today!',
+            'PeakForm empowers every runner to push their limits and achieve greatness. Join our community today!',
             textAlign: TextAlign.center,
             style: textTheme.bodyLarge?.copyWith(
               color: Colors.white,
@@ -456,7 +456,7 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
           Divider(color: Colors.white.withOpacity(0.4)),
           const SizedBox(height: 20),
           Text(
-            '© 2026 RunCoach. All rights reserved.',
+            '© 2026 PeakForm. All rights reserved.',
             textAlign: TextAlign.center,
             style: textTheme.bodySmall?.copyWith(
               color: Colors.white70,
@@ -507,7 +507,7 @@ class _CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
           ),
           const SizedBox(width: 10),
           Text(
-            'RunCoach',
+            'PeakForm',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w800,
               color: colorScheme.onPrimary,

@@ -62,7 +62,7 @@ class CoachDrawer extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'RunCoach',
+                    'PeakForm',
                     style: GoogleFonts.poppins(
                       color: colorScheme.onPrimary,
                       fontWeight: FontWeight.bold,

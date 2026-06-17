@@ -23,7 +23,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'RunCoach',
+      title: 'PeakForm',
       debugShowCheckedModeBanner: false,
       theme: _buildFitCoachTheme(), // Apply the custom theme here
       home: const LandingScreen(), // Start with LandingScreen as defined

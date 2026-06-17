@@ -11,7 +11,9 @@ import '../widgets/athlete_performance_tile.dart';
 import 'profile_settings_screen.dart';
 import 'coach_messages_page.dart';
 import '../widgets/assign_workout_bottom_sheet.dart';
-import '../config/api_config.dart'; // adjust path as needed
+import '../config/api_config.dart'; // adjust path as needed'
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 // ── App-wide gradient palette ────────────────────────────────────────────────
 const _kGradientStart = Color(0xFF1976D2);
@@ -59,8 +61,10 @@ class _CoachDashboardState extends State<CoachDashboard> {
   List<Athlete> _athletes = [];
   bool _isLoading = true;
   String _errorMessage = '';
+  int _unreadMessageCount = 0;
 
   final List<Map<String, dynamic>> _messages = [];
+  Map<String, dynamic> _coachJson = {};
 
   String _searchTerm   = '';
   String _planFilter   = 'all';
@@ -76,6 +80,7 @@ class _CoachDashboardState extends State<CoachDashboard> {
   /// Cache: athleteId → PerformanceLevel (same data the tile's badge uses).
   /// Populated in the background after athletes load.
   final Map<String, PerformanceLevel> _levelCache = {};
+  final Map<String, int> _unreadCache = {};
   bool _levelsLoading = false;
 
   static const List<Map<String, String>> _statusOptions = [
@@ -113,6 +118,7 @@ class _CoachDashboardState extends State<CoachDashboard> {
         authToken: authToken,
       );
 
+      _fetchCoachProfile();
       await _fetchAthletes();
     } catch (e) {
       setState(() { _errorMessage = 'Initialization error: $e'; _isLoading = false; });
@@ -123,12 +129,11 @@ class _CoachDashboardState extends State<CoachDashboard> {
     try {
       final fetched = await _userService.fetchAthletesForCoach();
       setState(() { _athletes = fetched; _isLoading = false; });
-      // Fetch performance levels in the background so the filter works.
-      _fetchPerformanceLevels();
+      _fetchPerformanceLevels(); // This already sets _unreadMessageCount
+      // REMOVE: _fetchUnreadMessageCount(); ← delete this line
     } catch (e) {
       setState(() {
-        _errorMessage =
-        'Failed to load athletes: ${e.toString().replaceFirst('Exception: ', '')}';
+        _errorMessage = 'Failed to load athletes: ${e.toString().replaceFirst('Exception: ', '')}';
         _isLoading = false;
       });
     }
@@ -140,24 +145,69 @@ class _CoachDashboardState extends State<CoachDashboard> {
     if (_performanceService == null || _athletes.isEmpty) return;
     setState(() => _levelsLoading = true);
 
+    final authData = await AuthStorageService.getAuthData();
+    final token = authData['authToken'] ?? '';
+
     final results = await Future.wait(
       _athletes.map((a) async {
+        // Performance level
+        PerformanceLevel level;
         try {
           final summary = await _performanceService!.getSummary(a.id);
-          return MapEntry(a.id, summary.level);
+          level = summary.level;
         } catch (_) {
-          return MapEntry(a.id, PerformanceLevel.noData);
+          level = PerformanceLevel.noData;
         }
+
+        // Unread messages from this athlete
+        int unread = 0;
+        try {
+          final response = await http.get(
+            Uri.parse('${ApiConfig.baseUrl}/api/messages/unread-from/${a.id}'),
+            headers: {'Authorization': 'Bearer $token'},
+          );
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            unread = data['count'] ?? 0;
+          }
+        } catch (_) {}
+
+        return MapEntry(a.id, MapEntry(level, unread));
       }),
     );
 
     if (!mounted) return;
     setState(() {
-      _levelCache
-        ..clear()
-        ..addEntries(results);
+      _levelCache.clear();
+      _unreadCache.clear();
+      for (final r in results) {
+        _levelCache[r.key] = r.value.key;
+        _unreadCache[r.key] = r.value.value;
+      }
       _levelsLoading = false;
+
+      // Total pending = sum of all per-athlete unreads
+      _unreadMessageCount = _unreadCache.values.fold(0, (a, b) => a + b);
     });
+  }
+
+  Future<void> _fetchCoachProfile() async {
+    try {
+      final authData = await AuthStorageService.getAuthData();
+      final token = authData['authToken'] ?? '';
+      final coachId = authData['coachId'] ?? '';
+
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/users/$coachId'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode == 200 && mounted) {
+        setState(() => _coachJson = jsonDecode(response.body));
+      }
+    } catch (e) {
+      debugPrint('Failed to fetch coach profile: $e');
+    }
   }
 
   // Convert PerformanceLevel enum → filter key string
@@ -209,16 +259,37 @@ class _CoachDashboardState extends State<CoachDashboard> {
   }
 
   Future<void> _openMessages(Athlete athlete) async {
-    final authData       = await AuthStorageService.getAuthData();
+    final authData = await AuthStorageService.getAuthData();
     final String coachId = authData['coachId'] ?? '';
+    final String token   = authData['authToken'] ?? '';
     if (!mounted) return;
-    Navigator.of(context).push(MaterialPageRoute(
+
+    await Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => CoachMessagesPage(
         currentUserId: coachId,
         athleteId:     athlete.id,
         athleteName:   athlete.name,
       ),
     ));
+
+    // Clear badge locally FIRST — instant UI feedback
+    if (mounted) {
+      setState(() {
+        _unreadCache[athlete.id] = 0;
+        _unreadMessageCount = _unreadCache.values.fold(0, (a, b) => a + b);
+      });
+    }
+
+    // Mark as read on server — await it fully before re-fetching
+    try {
+      await http.patch(
+        Uri.parse('${ApiConfig.baseUrl}/api/messages/read-all/${athlete.id}'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+    } catch (_) {}
+
+    // Only NOW re-fetch so Firestore has the updated read flags
+    if (mounted) _fetchPerformanceLevels();
   }
 
   // ── Status filter chip row ─────────────────────────────────────────────────
@@ -320,11 +391,53 @@ class _CoachDashboardState extends State<CoachDashboard> {
     );
   }
 
+  void _openMessagesOverview() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Messages',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            if (_athletes.isEmpty)
+              const Text('No athletes found.')
+            else
+              ..._athletes.map((athlete) => ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: const Color(0xFF1976D2),
+                  child: Text(
+                    athlete.name[0].toUpperCase(),
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+                title: Text(athlete.name),
+                subtitle: Text(athlete.email),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context); // close bottom sheet
+                  _openMessages(athlete);
+                },
+              )),
+          ],
+        ),
+      ),
+    );
+  }
+
+
+
   @override
   Widget build(BuildContext context) {
     final textTheme            = Theme.of(context).textTheme;
     final colorScheme          = Theme.of(context).colorScheme;
-    final pendingMessagesCount = _messages.where((m) => !m['read']).length;
+
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -348,26 +461,24 @@ class _CoachDashboardState extends State<CoachDashboard> {
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.notifications_none,
-                color: colorScheme.onBackground),
+            icon: Icon(Icons.notifications_none, color: colorScheme.onBackground),
             onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Showing Notifications'))),
           ),
           IconButton(
-            icon: Icon(Icons.person_outline,
-                color: colorScheme.onBackground),
+            icon: Icon(Icons.person_outline, color: colorScheme.onBackground),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => ProfileSettingsScreen(
-                isCoach: _isCurrentUserCoach,
-                userJson: const {},   // Coach profile — pass real coach data if available
-              ))),
+                builder: (_) => ProfileSettingsScreen(
+                  isCoach: _isCurrentUserCoach,
+                  userJson: _coachJson,  // ← was const {}
+                ))),
           ),
         ],
       ),
       drawer: CoachDrawer(
         onTabSelected:        _onTabSelected,
         currentTab:           _selectedTab,
-        pendingMessagesCount: pendingMessagesCount,
+        pendingMessagesCount: _unreadMessageCount,
       ),
       body: Container(
         color: Colors.white,
@@ -440,7 +551,7 @@ class _CoachDashboardState extends State<CoachDashboard> {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            Text(pendingMessagesCount.toString(),
+                            Text(_unreadMessageCount.toString(),
                                 style: textTheme.headlineMedium?.copyWith(
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white)),
@@ -675,6 +786,7 @@ class _CoachDashboardState extends State<CoachDashboard> {
                                               baseUrl:   _apiBaseUrl,
                                               authToken: '',
                                             ),
+                                        unreadCount: _unreadCache[athlete.id] ?? 0,
                                         onTap: () =>
                                             Navigator.of(context).push(
                                               MaterialPageRoute(

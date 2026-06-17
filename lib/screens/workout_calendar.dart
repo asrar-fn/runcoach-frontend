@@ -154,10 +154,12 @@ List<Workout> mapDataToWorkouts({
     final dateKey = localDayKey(a.date);
     if (dateKey == null) continue;
 
-    final alreadyExists = result.any((w) => w.date == dateKey);
+    // Check if this specific activity already exists (by id), not just by date
+    final alreadyExists = result.any((w) => w.id == 'activity-${a.id ?? dateKey}');
+
     if (!alreadyExists) {
       result.add(Workout(
-        id: 'activity-${a.id ?? dateKey}',
+        id: 'activity-${a.id ?? dateKey}',  // unique per activity
         date: dateKey,
         type: a.type?.toLowerCase() ?? 'custom',
         title: _getActivityLabel(a),
@@ -166,20 +168,24 @@ List<Workout> mapDataToWorkouts({
         completed: true,
         uploadedAt: a.createdAt ?? a.date,
       ));
-    } else {
-      final index = result.indexWhere((w) => w.date == dateKey);
-      if (index != -1) {
-        result[index] = Workout(
-          id: result[index].id,
-          date: result[index].date,
-          type: result[index].type,
-          title: result[index].title,
-          duration: result[index].duration,
-          distance: result[index].distance,
-          completed: true,
-          uploadedAt: a.createdAt ?? a.date,
-        );
-      }
+    }
+
+    // Also mark any existing assignment for that date as completed
+    final assignmentIndex = result.indexWhere(
+            (w) => w.date == dateKey && !w.id.startsWith('activity-')
+    );
+    if (assignmentIndex != -1) {
+      final existing = result[assignmentIndex];
+      result[assignmentIndex] = Workout(
+        id: existing.id,
+        date: existing.date,
+        type: existing.type,
+        title: existing.title,
+        duration: existing.duration,
+        distance: existing.distance,
+        completed: true,
+        uploadedAt: a.createdAt ?? a.date,
+      );
     }
   }
 

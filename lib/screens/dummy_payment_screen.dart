@@ -633,7 +633,7 @@ class _CreditCardVisual extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('RunCoach',
+                  Text('PeakForm',
                       style: GoogleFonts.poppins(
                           color:      Colors.white,
                           fontSize:   15,

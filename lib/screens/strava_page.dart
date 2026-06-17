@@ -67,40 +67,77 @@ class _StravaPageState extends State<StravaPage>
     }
   }
 
-  Future<void> _disconnectStrava(
-      BuildContext context, AppState appState) async {
+  Future<void> _disconnectStrava(BuildContext context, AppState appState) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog( // 👈 Use dialogContext, not context
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text('Disconnect Strava?',
             style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
         content: Text(
-            'Your Strava activities will no longer sync to RunCoach.',
+            'Your Strava activities will no longer sync to PeakForm.',
             style: GoogleFonts.poppins(fontSize: 14)),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child:
-              Text('Cancel', style: GoogleFonts.poppins(color: Colors.grey))),
+            onPressed: () => Navigator.pop(dialogContext, false), // 👈 dialogContext
+            child: Text('Cancel',
+                style: GoogleFonts.poppins(color: Colors.grey)),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text('Disconnect',
-                  style: GoogleFonts.poppins(color: Colors.red))),
+            onPressed: () => Navigator.pop(dialogContext, true),  // 👈 dialogContext
+            child: Text('Disconnect',
+                style: GoogleFonts.poppins(color: Colors.red)),
+          ),
         ],
       ),
     );
-    if (confirm == true) {
+
+    if (confirm != true) return;
+
+    try {
       final authData = await AuthStorageService.getAuthData();
       final token = authData['authToken'];
-      await http.delete(
+
+      if (token == null || token.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Auth error — please log in again')),
+          );
+        }
+        return;
+      }
+
+      final response = await http.delete(
         Uri.parse('${ApiConfig.baseUrl}/api/strava/disconnect'),
         headers: {'Authorization': 'Bearer $token'},
       );
-      await appState.checkStravaStatus();
+
+      debugPrint('Disconnect status: ${response.statusCode}');
+      debugPrint('Disconnect body: ${response.body}');
+
+      if (!context.mounted) return; // 👈 Always check after async gaps
+
+      if (response.statusCode == 200) {
+        await appState.checkStravaStatus();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Strava disconnected'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed: ${response.statusCode} — ${response.body}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Disconnect error: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Strava disconnected')),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     }

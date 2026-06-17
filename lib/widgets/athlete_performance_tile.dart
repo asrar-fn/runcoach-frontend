@@ -16,6 +16,7 @@ class AthletePerformanceTile extends StatefulWidget {
   final VoidCallback onTap;
   final VoidCallback onAssign;
   final VoidCallback onMessage;
+  final int unreadCount;
 
   const AthletePerformanceTile({
     super.key,
@@ -24,6 +25,7 @@ class AthletePerformanceTile extends StatefulWidget {
     required this.onTap,
     required this.onAssign,
     required this.onMessage,
+    this.unreadCount = 0,
   });
 
   @override
@@ -179,15 +181,51 @@ class _AthletePerformanceTileState extends State<AthletePerformanceTile>
                           ),
                         ),
                         const SizedBox(width: 4),
-                        SizedBox(
-                          height: 32,
-                          width: 32,
-                          child: IconButton(
-                            padding: EdgeInsets.zero,
-                            icon: const Icon(Icons.chat_bubble_outline,
-                                color: _kSecondaryText, size: 18),
-                            tooltip: 'Message Athlete',
-                            onPressed: widget.onMessage,
+                        // REPLACE the existing chat icon SizedBox with this:
+                        // Replace the SizedBox wrapping the Stack with this:
+                        GestureDetector(
+                          onTap: widget.onMessage,
+                          child: Padding(
+                            padding: const EdgeInsets.all(4.0),
+                            child: SizedBox(
+                              width: 36,
+                              height: 36,
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Center(
+                                    child: Icon(
+                                      Icons.chat_bubble_outline,
+                                      color: widget.unreadCount > 0
+                                          ? const Color(0xFF1976D2)
+                                          : _kSecondaryText,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  if (widget.unreadCount > 0)
+                                    Positioned(
+                                      right: -4,
+                                      top: -4,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Text(
+                                          '${widget.unreadCount}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 8,
+                                            fontWeight: FontWeight.bold,
+                                            height: 1,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -538,14 +576,14 @@ class _PerformanceChart extends StatelessWidget {
 
   static const Color _assignedColor = Color(0xFF1E88E5);
   static const Color _goodColor     = Color(0xFF43A047);
-  static const Color _okColor       = Color(0xFFFFB300);
-  static const Color _badColor      = Color(0xFFE53935);
+  // static const Color _okColor       = Color(0xFFFFB300);
+  // static const Color _badColor      = Color(0xFFE53935);
   static const Color _timeColor     = Color(0xFF8E24AA);
 
   Color _actualColor(double pct) {
     if (pct >= 90) return _goodColor;
-    if (pct >= 50) return _okColor;
-    return _badColor;
+    if (pct >= 50) return _goodColor;
+    return _goodColor;
   }
 
   @override
@@ -738,12 +776,10 @@ class _PerformanceChart extends StatelessWidget {
                 const SizedBox(width: 20),
                 Expanded(
                   child: Text(
-                    'date',
+                    'date - day/month',
                     style: const TextStyle(
                       fontSize:      9,
                       color:         Color(0xFF9E9E9E),
-                      fontWeight:    FontWeight.w600,
-                      letterSpacing: 0.5,
                     ),
                   ),
                 ),

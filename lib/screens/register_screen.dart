@@ -111,6 +111,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   String? _stressLevel;
   String? _eatingHabits;
   List<String> _energyFactors = [];
+  bool _showLifestyleErrors = false; // ← add this
 
   // ── Common field controllers ─────────────────────────────────────────────
   final TextEditingController _firstNameController = TextEditingController();
@@ -225,19 +226,24 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       if (_workRoutine == null ||
           _sleepHours == null ||
           _stressLevel == null ||
-          _eatingHabits == null) {
+          _eatingHabits == null ||
+          _energyFactors.isEmpty) {
+        setState(() => _showLifestyleErrors = true);
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please complete the lifestyle assessment.')),
         );
-        // Scroll to the first unanswered lifestyle question
+
         if (_workRoutine == null) {
           _scrollToKey(_q1Key);
         } else if (_sleepHours == null) {
           _scrollToKey(_q2Key);
         } else if (_stressLevel == null) {
           _scrollToKey(_q3Key);
-        } else {
+        } else if (_eatingHabits == null) {
           _scrollToKey(_q4Key);
+        } else {
+          _scrollToKey(_q5Key);
         }
         return;
       }
@@ -963,6 +969,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             'Shift-based/unpredictable',
           ],
           selectedValue: _workRoutine,
+          showError: _showLifestyleErrors && _workRoutine == null, // ← add this
           onChanged: (val) {
             setState(() => _workRoutine = val);
             _scrollToKey(_q2Key); // ← auto-scroll to Q2
@@ -978,6 +985,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           label: 'How many hours do you usually sleep? *',
           options: const ['Less than 5', '5–6', '6–7', '7–8', '8+'],
           selectedValue: _sleepHours,
+          showError: _showLifestyleErrors && _workRoutine == null, // ← add this
           onChanged: (val) {
             setState(() => _sleepHours = val);
             _scrollToKey(_q3Key); // ← auto-scroll to Q3
@@ -993,6 +1001,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           label: 'How often do you feel stressed or mentally drained? *',
           options: const ['Rarely', 'Sometimes', 'Often', 'Almost daily'],
           selectedValue: _stressLevel,
+          showError: _showLifestyleErrors && _workRoutine == null, // ← add this
           onChanged: (val) {
             setState(() => _stressLevel = val);
             _scrollToKey(_q4Key); // ← auto-scroll to Q4
@@ -1014,6 +1023,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             'Emotional/stress eating',
           ],
           selectedValue: _eatingHabits,
+          showError: _showLifestyleErrors && _workRoutine == null, // ← add this
           onChanged: (val) {
             setState(() => _eatingHabits = val);
             _scrollToKey(_q5Key); // ← auto-scroll to Q5
@@ -1070,6 +1080,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   );
                 }).toList(),
               ),
+              if (_showLifestyleErrors && _energyFactors.isEmpty) // ← add this
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(
+                    'Please select at least one option',
+                    style: textTheme.bodySmall?.copyWith(color: colorScheme.error),
+                  ),
+                ),
             ],
           ),
         ),
@@ -1079,13 +1097,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   // ── Single-select question tile ──────────────────────────────────────────
   Widget _buildSingleSelectQuestion({
-    required GlobalKey questionKey,  // ← used for auto-scroll target
+    required GlobalKey questionKey,
     required ColorScheme colorScheme,
     required TextTheme textTheme,
     required String label,
     required List<String> options,
     required String? selectedValue,
     required ValueChanged<String?> onChanged,
+    bool showError = false, // ← add this
   }) {
     return Container(
       key: questionKey,
@@ -1101,8 +1120,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(
-                    vertical: 12, horizontal: 14),
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? colorScheme.primary.withOpacity(0.08)
@@ -1111,43 +1129,35 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   border: Border.all(
                     color: isSelected
                         ? colorScheme.primary
+                        : showError
+                        ? colorScheme.error
                         : colorScheme.outline.withOpacity(0.3),
-                    width: isSelected ? 1.5 : 0.5,
+                    width: isSelected || showError ? 1.5 : 0.5,
                   ),
                 ),
                 child: Row(
                   children: [
-                    // Radio dot
                     Container(
                       width: 20,
                       height: 20,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: isSelected
-                              ? colorScheme.primary
-                              : colorScheme.outline,
+                          color: isSelected ? colorScheme.primary : colorScheme.outline,
                           width: 1.5,
                         ),
-                        color: isSelected
-                            ? colorScheme.primary
-                            : Colors.transparent,
+                        color: isSelected ? colorScheme.primary : Colors.transparent,
                       ),
                       child: isSelected
-                          ? const Icon(Icons.check,
-                          size: 12, color: Colors.white)
+                          ? const Icon(Icons.check, size: 12, color: Colors.white)
                           : null,
                     ),
                     const SizedBox(width: 12),
                     Text(
                       opt,
                       style: textTheme.bodyMedium?.copyWith(
-                        fontWeight: isSelected
-                            ? FontWeight.w600
-                            : FontWeight.normal,
-                        color: isSelected
-                            ? colorScheme.primary
-                            : colorScheme.onSurface,
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                        color: isSelected ? colorScheme.primary : colorScheme.onSurface,
                       ),
                     ),
                   ],
@@ -1155,6 +1165,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               ),
             );
           }),
+          if (showError)
+            Padding(
+              padding: const EdgeInsets.only(top: 2.0, left: 4.0),
+              child: Text(
+                'Please select one',
+                style: textTheme.bodySmall?.copyWith(color: colorScheme.error),
+              ),
+            ),
         ],
       ),
     );

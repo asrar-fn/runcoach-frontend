@@ -240,6 +240,7 @@
 
           if (response.statusCode == 200) {
             final data = jsonDecode(response.body);
+            print(jsonEncode(data));
             _meJson = Map<String, dynamic>.from(data);
             _me = Me.fromJson(data);
             _isFirstVisit = _me?.isFirstLogin ?? true;
@@ -825,6 +826,9 @@
 
       void _openUploadDialog() {
         final appState = Provider.of<AppState>(context, listen: false);
+        bool distanceError = false;
+        bool durationError = false;
+
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -869,6 +873,7 @@
                           ),
                           const Divider(height: 32),
                           Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Expanded(
                                 child: Column(
@@ -881,7 +886,9 @@
                                     const SizedBox(height: 8),
                                     TextField(
                                       controller: _distanceInputController,
-                                      onChanged: (val) => setDialogState(() {}),
+                                      onChanged: (val) => setDialogState(() {
+                                        if (distanceError) distanceError = false;
+                                      }),
                                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                       style: GoogleFonts.poppins(fontSize: 15),
                                       decoration: InputDecoration(
@@ -890,6 +897,7 @@
                                             color: Colors.grey.shade400, fontSize: 14),
                                         contentPadding: const EdgeInsets.symmetric(
                                             horizontal: 16, vertical: 12),
+                                        errorText: distanceError ? "Distance is required" : null,
                                       ),
                                     ),
                                   ],
@@ -907,7 +915,9 @@
                                     const SizedBox(height: 8),
                                     TextField(
                                       controller: _timeInputController,
-                                      onChanged: (val) => setDialogState(() {}),
+                                      onChanged: (val) => setDialogState(() {
+                                        if (durationError) durationError = false;
+                                      }),
                                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                       style: GoogleFonts.poppins(fontSize: 15),
                                       decoration: InputDecoration(
@@ -916,6 +926,7 @@
                                             color: Colors.grey.shade400, fontSize: 14),
                                         contentPadding: const EdgeInsets.symmetric(
                                             horizontal: 16, vertical: 12),
+                                        errorText: durationError ? "Duration is required" : null,
                                       ),
                                     ),
                                   ],
@@ -993,18 +1004,27 @@
                               Expanded(
                                 child: GradientButton(
                                   onPressed: () {
-                                    // Use the captured appState directly, no Provider.of needed
-                                    final double distance =
-                                        double.tryParse(_distanceInputController.text) ?? 0;
-                                    final int duration =
-                                        int.tryParse(_timeInputController.text) ?? 0;
-                                    if (distance <= 0) {
-                                      ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                          const SnackBar(content: Text("Enter a valid distance")));
+                                    final distanceText = _distanceInputController.text.trim();
+                                    final durationText = _timeInputController.text.trim();
+
+                                    final double distance = double.tryParse(distanceText) ?? 0;
+                                    final int duration = int.tryParse(durationText) ?? 0;
+
+                                    final bool hasDistanceError = distanceText.isEmpty || distance <= 0;
+                                    final bool hasDurationError = durationText.isEmpty || duration <= 0;
+
+                                    if (hasDistanceError || hasDurationError) {
+                                      setDialogState(() {
+                                        distanceError = hasDistanceError;
+                                        durationError = hasDurationError;
+                                      });
                                       return;
                                     }
+
                                     appState.uploadActivity(
-                                        distance, duration, _selectedDate ?? DateTime.now()
+                                      distance,
+                                      duration,
+                                      _selectedDate ?? DateTime.now(),
                                     ).then((_) {
                                       _distanceInputController.clear();
                                       _timeInputController.clear();
@@ -1612,7 +1632,7 @@
                     ),
                     const SizedBox(width: 10),
                     const Text(
-                      "RunCoach",
+                      "PeakForm",
                       style: TextStyle(
                         color: AppColors.textDark,
                         fontSize: 24,
@@ -1708,27 +1728,7 @@
                               // Build the JSON map from the Me object already in state
                               return ProfileSettingsScreen(
                                 isCoach: false,
-                                userJson: {
-                                  'id': appState.me?.id ?? '',
-                                  'name': appState.me?.name ?? '',
-                                  'email': '',           // not stored in Me — add if you fetch it
-                                  'phone': '',           // same
-                                  'city': '',
-                                  'country': '',
-                                  'height': 0,
-                                  'weight': 0,
-                                  'dateOfBirth': null,
-                                  'experienceLevel': 'beginner',
-                                  'weeklyMileage': '0-10',
-                                  'runningGoals': '',
-                                  'gender': '',
-                                  'plan': appState.me?.plan ?? '',
-                                  'coach': appState.me?.coachId != null ? {
-                                    'id': appState.me?.coachId,
-                                    'name': appState.me?.coachName ?? '',
-                                    'email': '',
-                                  } : null,
-                                },
+                                userJson: appState.meJson,
                               );
                             },
                           ),
@@ -2067,7 +2067,7 @@
                         ),
                         const SizedBox(width: 8),
                         const Text(
-                          "RunCoach",
+                          "PeakForm",
                           style: TextStyle(
                             color: AppColors.textDark,
                             fontSize: 24,
@@ -2163,27 +2163,7 @@
                     MaterialPageRoute(
                       builder: (_) => ProfileSettingsScreen(
                         isCoach: false,
-                        userJson: {
-                          'id': appState.me?.id ?? '',
-                          'name': appState.me?.name ?? '',
-                          'email': '',
-                          'phone': '',
-                          'city': '',
-                          'country': '',
-                          'height': 0,
-                          'weight': 0,
-                          'dateOfBirth': null,
-                          'experienceLevel': 'beginner',
-                          'weeklyMileage': '0-10',
-                          'runningGoals': '',
-                          'gender': '',
-                          'plan': appState.me?.plan ?? '',
-                          'coach': appState.me?.coachId != null ? {
-                            'id': appState.me?.coachId,
-                            'name': appState.me?.coachName ?? '',
-                            'email': '',
-                          } : null,
-                        },
+                        userJson: appState.meJson,
                       ),
                     ),
                   );
@@ -3462,27 +3442,27 @@
                 ],
               ),
               const SizedBox(height: 16),
-              if (!hasSyncedData)
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.watch_outlined, color: Colors.white70, size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          "Connect your smartwatch to enable VO2 Max estimation",
-                          style: GoogleFonts.poppins(
-                              fontSize: 13, color: Colors.white.withOpacity(0.9)),
-                        ),
-                      ),
-                    ],
-                  ),
+              // if (!hasSyncedData)
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
                 ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.watch_outlined, color: Colors.white70, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        "Connect your smartwatch to enable VO2 Max estimation",
+                        style: GoogleFonts.poppins(
+                            fontSize: 13, color: Colors.white.withOpacity(0.9)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               // else ...[
               //   Text(
               //     vo2.toStringAsFixed(1),
@@ -3617,107 +3597,107 @@
                   style: GoogleFonts.poppins(fontSize: 12, color: Colors.white.withOpacity(0.8))),
               const SizedBox(height: 16),
 
-              if (!hasWatchData)
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.primaryBlue.withOpacity(0.15)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.watch_outlined,
-                          color: Colors.white70, size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          "Connect your smartwatch to see HR trends, HR zones and resting HR",
-                          style: GoogleFonts.poppins(
-                              fontSize: 13, color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else ...[
-                // 7-day bars
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: days.map((day) {
-                    final hr = day['hr'] as int;
-                    final hasAct = day['hasActivity'] as bool;
-                    final maxVal = 180;
-                    final heightFraction = hasAct ? (hr / maxVal).clamp(0.0, 1.0) : 0.0;
-
-                    Color barColor = const Color(0xFF2575FC);
-                    if (hr > 165) barColor = const Color(0xFFE74C3C);
-                    else if (hr > 155) barColor = const Color(0xFFE6783A);
-                    else if (hr < 145) barColor = const Color(0xFF2ECC71);
-
-                    return Column(
-                      children: [
-                        Text(
-                          hasAct ? "$hr" : "—",
-                          style: GoogleFonts.poppins(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textDark),
-                        ),
-                        const SizedBox(height: 4),
-                        Container(
-                          width: 28,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF1976D2), Color(0xFFE6783A)],
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                            ),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          alignment: Alignment.bottomCenter,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 600),
-                            width: 28,
-                            height: 64 * heightFraction,
-                            decoration: BoxDecoration(
-                              color: hasAct ? barColor : Colors.transparent,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(day['label'] as String,
-                            style: GoogleFonts.poppins(
-                                fontSize: 11, color: AppColors.textMedium)),
-                      ],
-                    );
-                  }).toList(),
+              // if (!hasWatchData)
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.primaryBlue.withOpacity(0.15)),
                 ),
-                const SizedBox(height: 16),
-                Row(
+                child: Row(
                   children: [
-                    _HRChip(label: "Avg HR", value: "$avgHr bpm",
-                        color: AppColors.primaryBlue),
+                    const Icon(Icons.watch_outlined,
+                        color: Colors.white70, size: 20),
                     const SizedBox(width: 10),
-                    _HRChip(label: "Max HR", value: "$maxHr bpm",
-                        color: AppColors.accentRed),
-                    const SizedBox(width: 10),
-                    _HRChip(label: "Resting", value: "—",
-                        color: AppColors.accentGreen),
+                    Expanded(
+                      child: Text(
+                        "Connect your smartwatch to see HR trends, HR zones and resting HR",
+                        style: GoogleFonts.poppins(
+                            fontSize: 13, color: Colors.white),
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                // AFTER
-                Text(
-                  "💡 Sync your watch for resting HR and precise zone data",
-                  style: GoogleFonts.poppins(
-                      fontSize: 11, color: Colors.white.withOpacity(0.8),
-                      fontStyle: FontStyle.italic),
-                ),
-              ],
+              )
+              // else ...[
+              //   // 7-day bars
+              //   Row(
+              //     crossAxisAlignment: CrossAxisAlignment.end,
+              //     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              //     children: days.map((day) {
+              //       final hr = day['hr'] as int;
+              //       final hasAct = day['hasActivity'] as bool;
+              //       final maxVal = 180;
+              //       final heightFraction = hasAct ? (hr / maxVal).clamp(0.0, 1.0) : 0.0;
+              //
+              //       Color barColor = const Color(0xFF2575FC);
+              //       if (hr > 165) barColor = const Color(0xFFE74C3C);
+              //       else if (hr > 155) barColor = const Color(0xFFE6783A);
+              //       else if (hr < 145) barColor = const Color(0xFF2ECC71);
+              //
+              //       return Column(
+              //         children: [
+              //           Text(
+              //             hasAct ? "$hr" : "—",
+              //             style: GoogleFonts.poppins(
+              //                 fontSize: 10,
+              //                 fontWeight: FontWeight.w600,
+              //                 color: AppColors.textDark),
+              //           ),
+              //           const SizedBox(height: 4),
+              //           Container(
+              //             width: 28,
+              //             height: 64,
+              //             decoration: BoxDecoration(
+              //               gradient: const LinearGradient(
+              //                 colors: [Color(0xFF1976D2), Color(0xFFE6783A)],
+              //                 begin: Alignment.topCenter,
+              //                 end: Alignment.bottomCenter,
+              //               ),
+              //               borderRadius: BorderRadius.circular(6),
+              //             ),
+              //             alignment: Alignment.bottomCenter,
+              //             child: AnimatedContainer(
+              //               duration: const Duration(milliseconds: 600),
+              //               width: 28,
+              //               height: 64 * heightFraction,
+              //               decoration: BoxDecoration(
+              //                 color: hasAct ? barColor : Colors.transparent,
+              //                 borderRadius: BorderRadius.circular(6),
+              //               ),
+              //             ),
+              //           ),
+              //           const SizedBox(height: 4),
+              //           Text(day['label'] as String,
+              //               style: GoogleFonts.poppins(
+              //                   fontSize: 11, color: AppColors.textMedium)),
+              //         ],
+              //       );
+              //     }).toList(),
+              //   ),
+              //   const SizedBox(height: 16),
+              //   Row(
+              //     children: [
+              //       _HRChip(label: "Avg HR", value: "$avgHr bpm",
+              //           color: AppColors.primaryBlue),
+              //       const SizedBox(width: 10),
+              //       _HRChip(label: "Max HR", value: "$maxHr bpm",
+              //           color: AppColors.accentRed),
+              //       const SizedBox(width: 10),
+              //       _HRChip(label: "Resting", value: "—",
+              //           color: AppColors.accentGreen),
+              //     ],
+              //   ),
+              //   const SizedBox(height: 10),
+              //   // AFTER
+              //   Text(
+              //     "💡 Sync your watch for resting HR and precise zone data",
+              //     style: GoogleFonts.poppins(
+              //         fontSize: 11, color: Colors.white.withOpacity(0.8),
+              //         fontStyle: FontStyle.italic),
+              //   ),
+              // ],
             ],
           ),
         );
@@ -4149,7 +4129,7 @@
               ),
               const SizedBox(height: 10),
               Text(
-                "— Your RunCoach · $today",
+                "— Your PeakForm · $today",
                 style: GoogleFonts.poppins(
                     fontSize: 12,
                     color: Colors.white.withOpacity(0.65)),

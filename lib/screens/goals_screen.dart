@@ -212,8 +212,6 @@ class _SetGoalsCalendarScreenState extends State<SetGoalsCalendarScreen> {
               // ✅ Only setState here — no postFrameCallback overwriting this
               setState(() {
                 _goalType = opt['value'] as String;
-                _distController.clear();
-                _timeController.clear();
               });
             },
             child: AnimatedContainer(

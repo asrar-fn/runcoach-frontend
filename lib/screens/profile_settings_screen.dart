@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../services/auth_storage_service.dart';
+import '../config/api_config.dart';
 
 // ─── Palette ────────────────────────────────────────────────────────────────
 const Color kBlue = Color(0xFF2575FC);
@@ -38,6 +42,9 @@ class UserData {
   final String plan;
   final String? stravaId;
   final CoachData? coach;
+  final String certifications;
+  final int coachingExperienceYears;
+  final List<String> specializations;
 
   const UserData({
     required this.id,
@@ -58,6 +65,9 @@ class UserData {
     required this.plan,
     this.stravaId,
     this.coach,
+    this.certifications = '',
+    this.coachingExperienceYears = 0,
+    this.specializations = const [],
   });
 
   /// Construct from your API JSON response
@@ -83,6 +93,11 @@ class UserData {
       plan: json['plan'] ?? '',
       stravaId: json['stravaId'],
       coach: json['coach'] != null ? CoachData.fromJson(json['coach']) : null,
+      certifications: json['certifications'] ?? '',
+      coachingExperienceYears: (json['coachingExperienceYears'] as num?)?.toInt() ?? 0,
+      specializations: (json['specializations'] as List<dynamic>?)
+          ?.map((e) => e.toString())
+          .toList() ?? [],
     );
   }
 }
@@ -124,6 +139,10 @@ class ProfileModel {
   String currentPassword;
   String newPassword;
   String confirmPassword;
+  String bio;
+  String certifications;
+  int coachingExperienceYears;
+  List<String> specializations;
 
   ProfileModel({
     this.firstName = '',
@@ -147,6 +166,10 @@ class ProfileModel {
     this.currentPassword = '',
     this.newPassword = '',
     this.confirmPassword = '',
+    this.bio = '',
+    this.certifications = '',
+    this.coachingExperienceYears = 0,
+    this.specializations = const [],
   });
 
   /// Initialize from API UserData
@@ -178,6 +201,10 @@ class ProfileModel {
       goals: user.runningGoals,
       gender: user.gender,
       timezone: user.country == 'India' ? 'Asia/Kolkata' : 'America/New_York',
+      bio: user.bio,
+      certifications: user.certifications,
+      coachingExperienceYears: user.coachingExperienceYears,
+      specializations: List.from(user.specializations),
     );
   }
 
@@ -200,6 +227,10 @@ class ProfileModel {
     distanceUnit: distanceUnit,
     timezone: timezone,
     gender: gender,
+    bio: bio,
+    certifications: certifications,
+    coachingExperienceYears: coachingExperienceYears,
+    specializations: List.from(specializations),
   );
 }
 
@@ -319,11 +350,17 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
   bool _savingPass = false;
 
   // Tabs: Personal, Fitness, Metrics, Security (no Alerts)
-  static const List<Map<String, String>> _tabDefs = [
-    {'id': 'personal', 'label': 'Personal'},
-    {'id': 'fitness', 'label': 'Fitness'},
-    {'id': 'metrics', 'label': 'Metrics'},
-    {'id': 'security', 'label': 'Security'},
+  List<Map<String, String>> get _tabDefs => widget.isCoach
+      ? [
+    {'id': 'profile',   'label': 'Profile'},
+    {'id': 'coaching',  'label': 'Coaching'},
+    {'id': 'security',  'label': 'Security'},
+  ]
+      : [
+    {'id': 'personal',  'label': 'Personal'},
+    {'id': 'fitness',   'label': 'Fitness'},
+    {'id': 'metrics',   'label': 'Metrics'},
+    {'id': 'security',  'label': 'Security'},
   ];
 
   bool get _isDirty => _hasChanges();
@@ -349,6 +386,15 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
         p.distanceUnit != o.distanceUnit ||
         p.timezone != o.timezone ||
         p.gender != o.gender;
+        p.bio != o.bio ||
+        p.certifications != o.certifications ||
+        p.coachingExperienceYears != o.coachingExperienceYears || !_listEquals(p.specializations, o.specializations);
+  }
+
+  bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) if (a[i] != b[i]) return false;
+    return true;
   }
 
   @override
@@ -357,7 +403,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
     _userData = UserData.fromJson(widget.userJson);
     _profile = ProfileModel.fromUserData(_userData);
     _original = _profile.copy();
-    _tabs = TabController(length: _tabDefs.length, vsync: this);
+    _tabs = TabController(
+      length: widget.isCoach ? 3 : 4,
+      vsync: this,
+    );
   }
 
   @override
@@ -370,12 +419,55 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
 
   Future<void> _save() async {
     setState(() => _saving = true);
-    await Future.delayed(const Duration(milliseconds: 1400));
-    setState(() {
-      _saving = false;
-      _original = _profile.copy();
-    });
-    _showSnack('Profile saved successfully', isSuccess: true);
+
+    try {
+      final authData = await AuthStorageService.getAuthData();
+      final token = authData['authToken'];
+
+      final Map<String, dynamic> payload = {
+        'name': '${_profile.firstName} ${_profile.lastName}'.trim(),
+        'email': _profile.email,
+        'phoneNumber': '${_profile.phoneCode} ${_profile.phone}',
+        'city': _profile.city,
+        'country': _profile.country,
+        'height': _profile.height,
+        'weight': _profile.weight,
+        'gender': _profile.gender,
+        'experienceLevel': _profile.experience,
+        'weeklyMileage': _profile.weeklyMileage,
+        'runningGoals': _profile.goals,
+        if (_profile.dob != null)
+          'dateOfBirth':
+          '${_profile.dob!.year}-${_profile.dob!.month.toString().padLeft(2, '0')}-${_profile.dob!.day.toString().padLeft(2, '0')}',
+        if (widget.isCoach) 'bio': _profile.bio,
+        if (widget.isCoach) 'certifications': _profile.certifications,
+        if (widget.isCoach) 'coachingExperienceYears': _profile.coachingExperienceYears,
+        if (widget.isCoach) 'specializations': _profile.specializations,
+      };
+
+      final response = await http.put(
+        Uri.parse('${ApiConfig.baseUrl}/api/auth/me'), // ← see note below
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _saving = false;
+          _original = _profile.copy();
+        });
+        _showSnack('Profile saved successfully', isSuccess: true);
+      } else {
+        setState(() => _saving = false);
+        _showSnack('Failed to save profile (${response.statusCode})', isError: true);
+      }
+    } catch (e) {
+      setState(() => _saving = false);
+      _showSnack('Error saving profile: $e', isError: true);
+    }
   }
 
   void _discard() {
@@ -426,6 +518,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
 
   String get _displayName {
     final n = '${_profile.firstName} ${_profile.lastName}'.trim();
+    print(_profile);
+    print(_userData);
     return n.isEmpty ? _userData.name : n;
   }
 
@@ -458,7 +552,13 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
               Expanded(
                 child: TabBarView(
                   controller: _tabs,
-                  children: [
+                  children: widget.isCoach
+                      ? [
+                    _buildCoachProfileTab(),
+                    _buildCoachingTab(),
+                    _buildSecurityTab(),
+                  ]
+                      : [
                     _buildPersonalTab(),
                     _buildFitnessTab(),
                     _buildMetricsTab(),
@@ -474,14 +574,147 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
     );
   }
 
+  Widget _buildCoachProfileTab() => _TabScroll(children: [
+    _SectionHeader(icon: Icons.person_outline_rounded, label: 'Personal Information'),
+    _FieldRow(children: [
+      _Field(
+        label: 'First name',
+        icon: Icons.badge_outlined,
+        child: _TextInput(
+          value: _profile.firstName,
+          hint: 'First name',
+          onChanged: (v) { _profile.firstName = v; _markDirty(); },
+        ),
+      ),
+      _Field(
+        label: 'Last name',
+        child: _TextInput(
+          value: _profile.lastName,
+          hint: 'Last name',
+          onChanged: (v) { _profile.lastName = v; _markDirty(); },
+        ),
+      ),
+    ]),
+    _Field(
+      label: 'Email address',
+      icon: Icons.mail_outline_rounded,
+      child: _TextInput(
+        value: _profile.email,
+        hint: 'you@example.com',
+        keyboard: TextInputType.emailAddress,
+        onChanged: (v) { _profile.email = v; _markDirty(); },
+      ),
+    ),
+    _Field(
+      label: 'Mobile number',
+      icon: Icons.phone_outlined,
+      child: _PhoneInput(
+        code: _profile.phoneCode,
+        number: _profile.phone,
+        onCodeChanged: (v) { _profile.phoneCode = v; _markDirty(); },
+        onNumberChanged: (v) { _profile.phone = v; _markDirty(); },
+      ),
+    ),
+    _FieldRow(children: [
+      _Field(
+        label: 'City',
+        icon: Icons.location_city_outlined,
+        child: _TextInput(
+          value: _profile.city,
+          hint: 'City',
+          onChanged: (v) { _profile.city = v; _markDirty(); },
+        ),
+      ),
+      _Field(
+        label: 'Country',
+        icon: Icons.public_outlined,
+        child: _TextInput(
+          value: _profile.country,
+          hint: 'Country',
+          onChanged: (v) { _profile.country = v; _markDirty(); },
+        ),
+      ),
+    ]),
+    _Field(
+      label: 'Bio',
+      icon: Icons.info_outline_rounded,
+      child: _TextArea(
+        value: _profile.bio,
+        hint: 'Tell athletes about yourself...',
+        onChanged: (v) { _profile.bio = v; _markDirty(); },
+      ),
+    ),
+  ]);
+
+  Widget _buildCoachingTab() => _TabScroll(children: [
+    _SectionHeader(icon: Icons.sports_rounded, label: 'Coaching Details'),
+    _Field(
+      label: 'Certifications',
+      icon: Icons.workspace_premium_outlined,
+      child: _TextInput(
+        value: _profile.certifications,
+        hint: 'e.g. Certified TCS Runner',
+        onChanged: (v) { _profile.certifications = v; _markDirty(); },
+      ),
+    ),
+    _Field(
+      label: 'Years of coaching experience',
+      icon: Icons.timer_outlined,
+      child: _TextInput(
+        value: _profile.coachingExperienceYears > 0
+            ? _profile.coachingExperienceYears.toString()
+            : '',
+        hint: 'e.g. 7',
+        keyboard: TextInputType.number,
+        onChanged: (v) {
+          _profile.coachingExperienceYears = int.tryParse(v) ?? 0;
+          _markDirty();
+        },
+      ),
+    ),
+    _Field(
+      label: 'Specializations',
+      icon: Icons.directions_run_rounded,
+      child: _ChipGroup(
+        options: const [
+          {'value': '5km',           'label': '5km'},
+          {'value': '10km',          'label': '10km'},
+          {'value': 'Half Marathon', 'label': 'Half Marathon'},
+          {'value': 'Marathon',      'label': 'Marathon'},
+          {'value': '50km',          'label': '50km'},
+          {'value': 'Ultra',         'label': 'Ultra'},
+        ],
+        // Multi-select: toggle in the list
+        selected: _profile.specializations.isNotEmpty
+            ? _profile.specializations.first
+            : '',
+        onChanged: (v) {
+          final list = List<String>.from(_profile.specializations);
+          list.contains(v) ? list.remove(v) : list.add(v);
+          _profile.specializations = list;
+          _markDirty();
+        },
+        selectedMultiple: _profile.specializations,
+      ),
+    ),
+  ]);
+
   // ── APP BAR ───────────────────────────────────────────────────────────────
   Widget _buildAppBar() => Container(
     color: kWhite,
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
     child: Row(
       children: [
-        const Icon(Icons.arrow_back_ios_new_rounded,
-            size: 20, color: kText),
+        IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            size: 20,
+            color: kText,
+          ),
+          onPressed: () {
+            Navigator.pop(context);
+          },
+        ),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
@@ -567,35 +800,42 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _displayName,
+                widget.isCoach
+                    ? '${_profile.coachingExperienceYears > 0 ? "${_profile.coachingExperienceYears} yrs exp" : "Coach"} · ${_userData.city.isNotEmpty ? _userData.city : "Location not set"}'
+                    : '${_experienceLabel(_profile.experience)} · ${_userData.city}',
                 style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: kText),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                '${_experienceLabel(_profile.experience)} · ${_userData.city}',
-                style: const TextStyle(fontSize: 12, color: kMuted),
+                  fontSize: 12,
+                  color: kMuted,
+                ),
               ),
               const SizedBox(height: 4),
               // Plan badge
               Row(
                 children: [
-                  _PillBadge(
-                    label: '${_userData.plan} Plan',
-                    color: kOrange.withOpacity(0.1),
-                    textColor: kOrange,
-                    icon: Icons.directions_run_rounded,
-                  ),
-                  if (_userData.coach != null) ...[
-                    const SizedBox(width: 6),
+                  if (widget.isCoach) ...[
+                    if (_userData.specializations.isNotEmpty)
+                      _PillBadge(
+                        label: _userData.specializations.take(2).join(', '),
+                        color: kOrange.withOpacity(0.1),
+                        textColor: kOrange,
+                        icon: Icons.sports_rounded,
+                      ),
+                  ] else ...[
                     _PillBadge(
-                      label: _userData.coach!.name.split(' ').first,
-                      color: kBlue.withOpacity(0.08),
-                      textColor: kBlue,
-                      icon: Icons.sports_rounded,
+                      label: '${_userData.plan} Plan',
+                      color: kOrange.withOpacity(0.1),
+                      textColor: kOrange,
+                      icon: Icons.directions_run_rounded,
                     ),
+                    if (_userData.coach != null) ...[
+                      const SizedBox(width: 6),
+                      _PillBadge(
+                        label: _userData.coach!.name.split(' ').first,
+                        color: kBlue.withOpacity(0.08),
+                        textColor: kBlue,
+                        icon: Icons.sports_rounded,
+                      ),
+                    ],
                   ],
                 ],
               ),
@@ -1494,24 +1734,30 @@ class _DateInput extends StatelessWidget {
 class _ChipGroup extends StatelessWidget {
   final List<Map<String, String>> options;
   final String selected;
+  final List<String>? selectedMultiple;  // ADD
   final ValueChanged<String> onChanged;
-  const _ChipGroup(
-      {required this.options,
-        required this.selected,
-        required this.onChanged});
+
+  const _ChipGroup({
+    required this.options,
+    required this.selected,
+    required this.onChanged,
+    this.selectedMultiple,               // ADD
+  });
 
   @override
   Widget build(BuildContext context) => Wrap(
     spacing: 6,
     runSpacing: 6,
     children: options.map((o) {
-      final isSelected = o['value'] == selected;
+      // Multi-select mode if selectedMultiple provided
+      final isSelected = selectedMultiple != null
+          ? selectedMultiple!.contains(o['value'])
+          : o['value'] == selected;
       return GestureDetector(
         onTap: () => onChanged(o['value']!),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
-          padding: const EdgeInsets.symmetric(
-              horizontal: 13, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
           decoration: BoxDecoration(
             gradient: isSelected ? kGrad : null,
             color: isSelected ? null : kWhite,
