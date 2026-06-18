@@ -338,47 +338,51 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 ),
               ],
             ),
-            actionsAlignment: MainAxisAlignment.center,
             actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
             actions: [
-              OutlinedButton(
-                onPressed: () {
-                  Navigator.of(dialogContext).pop();
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(builder: (_) => const LandingScreen()),
-                  );
-                },
-                style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30)),
-                  side: BorderSide(
-                      color: Theme.of(dialogContext)
-                          .colorScheme
-                          .outline
-                          .withOpacity(0.5)),
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                ),
-                child: const Text('Cancel'),
-              ),
-              const SizedBox(width: 12),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.of(dialogContext).pop();
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(builder: (_) => const SignInScreen()),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(dialogContext).colorScheme.primary,
-                  foregroundColor:
-                  Theme.of(dialogContext).colorScheme.onPrimary,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30)),
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                ),
-                child: const Text('Go to Login'),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () {
+                        Navigator.of(dialogContext).pop();
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(builder: (_) => const LandingScreen()),
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30)),
+                        side: BorderSide(
+                            color: Theme.of(dialogContext)
+                                .colorScheme
+                                .outline
+                                .withOpacity(0.5)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(dialogContext).pop();
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(builder: (_) => const SignInScreen()),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(dialogContext).colorScheme.primary,
+                        foregroundColor: Theme.of(dialogContext).colorScheme.onPrimary,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Go to Login'),
+                    ),
+                  ),
+                ],
               ),
             ],
           );
@@ -399,6 +403,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -415,81 +421,72 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         backgroundColor: colorScheme.surface,
         elevation: 0,
       ),
-      body: Container(
-        color: colorScheme.surface,
-        padding: EdgeInsets.only(
-          left: 24,
-          right: 24,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-        ),
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            controller: _scrollController, // ← required for ensureVisible
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 16),
-                _buildUserTypeRadioSelector(colorScheme, textTheme),
-                const SizedBox(height: 16),
-                Text(
-                  _selectedType == 'athlete'
-                      ? 'Create your profile to start your running journey'
-                      : 'Register as a run coach and start training athletes achieve their goals',
-                  style: textTheme.bodyLarge
-                      ?.copyWith(color: colorScheme.onSurface.withOpacity(0.7)),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                _buildCommonFields(colorScheme, textTheme),
-                if (_selectedType == 'athlete')
-                  _buildAthleteFields(colorScheme, textTheme),
-                if (_selectedType == 'coach')
-                  _buildCoachFields(colorScheme, textTheme),
-                const SizedBox(height: 24),
-                _buildTermsAndConditions(colorScheme, textTheme),
-                const SizedBox(height: 24),
-                Consumer(
-                  builder: (context, ref, child) {
-                    final registrationState =
-                    ref.watch(registerProvider(const {'dummy': true}));
-                    return ElevatedButton(
-                      onPressed: registrationState.isLoading
-                          ? null
-                          : _handleRegister,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: colorScheme.primary,
-                        foregroundColor: colorScheme.onPrimary,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30)),
-                      ),
-                      child: registrationState.isLoading
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : Text(
-                        'Complete Registration',
-                        style: textTheme.titleMedium?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
-                Center(
-                  child: TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text(
-                      'Already have an account? Sign in here',
-                      style:
-                      textTheme.bodyMedium?.copyWith(color: colorScheme.primary),
+      body: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildUserTypeRadioSelector(colorScheme, textTheme),
+              const SizedBox(height: 16),
+              Text(
+                _selectedType == 'athlete'
+                    ? 'Create your profile to start your running journey'
+                    : 'Register as a run coach and start training athletes achieve their goals',
+                style: textTheme.bodyLarge
+                    ?.copyWith(color: colorScheme.onSurface.withOpacity(0.7)),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              _buildCommonFields(colorScheme, textTheme),
+              if (_selectedType == 'athlete')
+                _buildAthleteFields(colorScheme, textTheme),
+              if (_selectedType == 'coach')
+                _buildCoachFields(colorScheme, textTheme),
+              const SizedBox(height: 24),
+              _buildTermsAndConditions(colorScheme, textTheme),
+              const SizedBox(height: 24),
+              Consumer(
+                builder: (context, ref, child) {
+                  final registrationState =
+                  ref.watch(registerProvider(const {'dummy': true}));
+                  return ElevatedButton(
+                    onPressed: registrationState.isLoading
+                        ? null
+                        : _handleRegister,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30)),
                     ),
+                    child: registrationState.isLoading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : Text(
+                      'Complete Registration',
+                      style: textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+              Center(
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(
+                    'Already have an account? Sign in here',
+                    style: textTheme.bodyMedium
+                        ?.copyWith(color: colorScheme.primary),
                   ),
                 ),
-                const SizedBox(height: 16),
-              ],
-            ),
+              ),
+              const SizedBox(height: 16),
+            ],
           ),
         ),
       ),
@@ -985,7 +982,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           label: 'How many hours do you usually sleep? *',
           options: const ['Less than 5', '5–6', '6–7', '7–8', '8+'],
           selectedValue: _sleepHours,
-          showError: _showLifestyleErrors && _workRoutine == null, // ← add this
+          showError: _showLifestyleErrors && _sleepHours == null, // ← add this
           onChanged: (val) {
             setState(() => _sleepHours = val);
             _scrollToKey(_q3Key); // ← auto-scroll to Q3
@@ -1001,7 +998,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           label: 'How often do you feel stressed or mentally drained? *',
           options: const ['Rarely', 'Sometimes', 'Often', 'Almost daily'],
           selectedValue: _stressLevel,
-          showError: _showLifestyleErrors && _workRoutine == null, // ← add this
+          showError: _showLifestyleErrors && _stressLevel == null, // ← add this
           onChanged: (val) {
             setState(() => _stressLevel = val);
             _scrollToKey(_q4Key); // ← auto-scroll to Q4
@@ -1023,7 +1020,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             'Emotional/stress eating',
           ],
           selectedValue: _eatingHabits,
-          showError: _showLifestyleErrors && _workRoutine == null, // ← add this
+          showError: _showLifestyleErrors && _eatingHabits == null, //eating habits error
           onChanged: (val) {
             setState(() => _eatingHabits = val);
             _scrollToKey(_q5Key); // ← auto-scroll to Q5
@@ -1254,7 +1251,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   }) {
     return InputDecoration(
       labelText: labelText,
-      hintText: helperText,
+      helperText: helperText,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(15),
         borderSide:

@@ -1719,8 +1719,8 @@
                     _DrawerItem(
                       icon: Icons.settings,
                       title: 'Settings',
-                      onTap: () {
-                        Navigator.push(
+                      onTap: () async {
+                        await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) {
@@ -1733,6 +1733,9 @@
                             },
                           ),
                         );
+                        if (!mounted) return;
+                        // Refetch so the dashboard reflects whatever was just saved
+                        await Provider.of<AppState>(context, listen: false).refreshAll();
                       },
                     ),
                   ],
@@ -2155,18 +2158,21 @@
               _DrawerItem(
                 icon: Icons.settings,
                 title: 'Settings',
-                onTap: () {
-                  Navigator.pop(context);
-                  final appState = Provider.of<AppState>(context, listen: false);
-                  Navigator.push(
+                onTap: () async {
+                  await Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => ProfileSettingsScreen(
-                        isCoach: false,
-                        userJson: appState.meJson,
-                      ),
+                      builder: (context) {
+                        final appState = Provider.of<AppState>(context, listen: false);
+                        return ProfileSettingsScreen(
+                          isCoach: false,
+                          userJson: appState.meJson,
+                        );
+                      },
                     ),
                   );
+                  if (!mounted) return;
+                  await appState.refreshAll();
                 },
               ),
             ],

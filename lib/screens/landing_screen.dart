@@ -17,6 +17,9 @@ class AuthNotifier extends StateNotifier<bool> {
   void logout() { state = false; }
 }
 
+final Color kPrimaryBlue = const Color(0xFF4285F4);
+final Color kAccentOrange = const Color(0xFFFF964F);
+
 class LandingScreen extends ConsumerStatefulWidget {
   const LandingScreen({super.key});
 
@@ -188,8 +191,8 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
                       height: screenSize.height * 0.8,
                       child: CustomPaint(
                         painter: _AbstractRunnerSparklePainter(
-                          primaryColor: colorScheme.primary,
-                          accentColor: colorScheme.secondary,
+                          primaryColor: kPrimaryBlue,
+                          accentColor: kAccentOrange,
                           animationValue: _runnerSparkleAnimation.value,
                         ),
                       ),
@@ -252,7 +255,7 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
                   children: [
                     TextSpan(
                       text: 'Run.',
-                      style: TextStyle(color: colorScheme.primary),
+                      style: TextStyle(color: kPrimaryBlue),
                     ),
                   ],
                 ),
@@ -277,8 +280,8 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
                 },
                 gradient: LinearGradient(
                   colors: [
-                    colorScheme.primary,
-                    colorScheme.secondary,
+                    kPrimaryBlue,
+                    kAccentOrange,
                   ],
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
@@ -372,11 +375,11 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
           margin: const EdgeInsets.symmetric(horizontal: 5.0),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(5),
-            color: _currentPage == index ? colorScheme.secondary : Colors.grey.withOpacity(0.4),
+            color: _currentPage == index ? kAccentOrange : Colors.grey.withOpacity(0.4),
             boxShadow: _currentPage == index
                 ? [
               BoxShadow(
-                color: colorScheme.secondary.withOpacity(0.6),
+                color: kAccentOrange.withOpacity(0.6),
                 blurRadius: 8,
                 spreadRadius: 1,
               )
@@ -402,7 +405,7 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
                 height: 40,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [colorScheme.primary, colorScheme.secondary],
+                    colors: [kPrimaryBlue, kAccentOrange],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -490,7 +493,7 @@ class _CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
             height: 36,
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [colorScheme.primary, colorScheme.secondary],
+                colors: [kPrimaryBlue, kAccentOrange],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -521,7 +524,7 @@ class _CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
         Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [colorScheme.primary, colorScheme.secondary],
+              colors: [kPrimaryBlue, kAccentOrange],
             ),
             borderRadius: BorderRadius.circular(25),
           ),

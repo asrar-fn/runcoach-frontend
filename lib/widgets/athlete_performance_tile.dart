@@ -17,6 +17,7 @@ class AthletePerformanceTile extends StatefulWidget {
   final VoidCallback onAssign;
   final VoidCallback onMessage;
   final int unreadCount;
+  final int refreshKey;
 
   const AthletePerformanceTile({
     super.key,
@@ -26,6 +27,7 @@ class AthletePerformanceTile extends StatefulWidget {
     required this.onAssign,
     required this.onMessage,
     this.unreadCount = 0,
+    this.refreshKey = 0,
   });
 
   @override
@@ -39,16 +41,27 @@ class _AthletePerformanceTileState extends State<AthletePerformanceTile>
   late AnimationController _expandCtrl;
   late Animation<double> _expandAnim;
 
+  void _loadSummary() {
+    _summaryFuture = widget.performanceService.getSummary(widget.athlete.id);
+  }
+
   @override
   void initState() {
     super.initState();
-    _summaryFuture = widget.performanceService.getSummary(widget.athlete.id);
+    _loadSummary();
     _expandCtrl = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    _expandAnim =
-        CurvedAnimation(parent: _expandCtrl, curve: Curves.easeInOut);
+    _expandAnim = CurvedAnimation(parent: _expandCtrl, curve: Curves.easeInOut);
+  }
+
+  @override
+  void didUpdateWidget(covariant AthletePerformanceTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      setState(_loadSummary);
+    }
   }
 
   @override

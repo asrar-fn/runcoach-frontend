@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../services/auth_storage_service.dart';
 import '../config/api_config.dart';
+import './landing_screen.dart';
 
 // ─── Palette ────────────────────────────────────────────────────────────────
 const Color kBlue = Color(0xFF2575FC);
@@ -72,32 +73,38 @@ class UserData {
 
   /// Construct from your API JSON response
   factory UserData.fromJson(Map<String, dynamic> json) {
+    List<String> parseSpecializations(dynamic raw) {
+      if (raw == null) return [];
+      if (raw is List) return raw.map((e) => e.toString()).toList();
+      if (raw is String) return raw.isEmpty ? [] : [raw];
+      return [];
+    }
+
     return UserData(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
-      email: json['email'] ?? '',
-      phone: json['phone'] ?? '',
-      city: json['city'] ?? '',
-      country: json['country'] ?? '',
-      role: json['role'] ?? 'athlete',
-      experienceLevel: json['experienceLevel'] ?? 'beginner',
-      weeklyMileage: json['weeklyMileage'] ?? '0-10',
-      runningGoals: json['runningGoals'] ?? '',
-      bio: json['bio'] ?? '',
+      id: json['id']?.toString() ?? json['_id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      phone: json['phone']?.toString() ?? '',
+      city: json['city']?.toString() ?? '',
+      country: json['country']?.toString() ?? '',
+      role: json['role']?.toString() ?? 'athlete',
+      experienceLevel: json['experienceLevel']?.toString() ?? 'beginner',
+      weeklyMileage: json['weeklyMileage']?.toString() ?? '0-10',
+      runningGoals: json['runningGoals']?.toString() ?? '',
+      bio: json['bio']?.toString() ?? '',
       height: (json['height'] as num?)?.toInt() ?? 0,
       weight: (json['weight'] as num?)?.toInt() ?? 0,
       dateOfBirth: json['dateOfBirth'] != null
-          ? DateTime.tryParse(json['dateOfBirth'])
+          ? DateTime.tryParse(json['dateOfBirth'].toString())
           : null,
-      gender: json['gender'] ?? '',
-      plan: json['plan'] ?? '',
-      stravaId: json['stravaId'],
+      gender: json['gender']?.toString() ?? '',
+      plan: json['plan']?.toString() ?? '',
+      stravaId: json['stravaId']?.toString(),
       coach: json['coach'] != null ? CoachData.fromJson(json['coach']) : null,
-      certifications: json['certifications'] ?? '',
-      coachingExperienceYears: (json['coachingExperienceYears'] as num?)?.toInt() ?? 0,
-      specializations: (json['specializations'] as List<dynamic>?)
-          ?.map((e) => e.toString())
-          .toList() ?? [],
+      certifications: json['certifications']?.toString() ?? '',
+      coachingExperienceYears:
+      (json['coachingExperienceYears'] as num?)?.toInt() ?? 0,
+      specializations: parseSpecializations(json['specializations']),
     );
   }
 }
@@ -204,7 +211,7 @@ class ProfileModel {
       bio: user.bio,
       certifications: user.certifications,
       coachingExperienceYears: user.coachingExperienceYears,
-      specializations: List.from(user.specializations),
+      specializations: List<String>.from(user.specializations), // explicit copy
     );
   }
 
@@ -486,16 +493,84 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
       _showSnack('Passwords do not match', isError: true);
       return;
     }
+
     setState(() => _savingPass = true);
-    await Future.delayed(const Duration(milliseconds: 1400));
-    setState(() {
-      _savingPass = false;
-      _profile.currentPassword = '';
-      _profile.newPassword = '';
-      _profile.confirmPassword = '';
-    });
-    _showSnack('Password updated successfully', isSuccess: true);
+
+    try {
+      final authData = await AuthStorageService.getAuthData();
+      final token = authData['authToken'];
+
+      final response = await http.put(
+        Uri.parse('${ApiConfig.baseUrl}/api/users/change-password'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'currentPassword': _profile.currentPassword,
+          'newPassword': _profile.newPassword,
+        }),
+      );
+
+      setState(() => _savingPass = false);
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _profile.currentPassword = '';
+          _profile.newPassword = '';
+          _profile.confirmPassword = '';
+        });
+        _showSnack('Password updated successfully', isSuccess: true);
+      } else {
+        final data = jsonDecode(response.body);
+        _showSnack(data['message'] ?? 'Failed to update password', isError: true);
+      }
+    } catch (e) {
+      setState(() => _savingPass = false);
+      _showSnack('Error updating password: $e', isError: true);
+    }
   }
+
+  Future<void> _logout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Logout',
+            style: TextStyle(fontWeight: FontWeight.w700, color: kText)),
+        content: const Text('Are you sure you want to logout?',
+            style: TextStyle(color: kMuted)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: kMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: kError,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              elevation: 0,
+            ),
+            child: const Text('Logout',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout != true) return;
+    await AuthStorageService.clearAuthData();
+    if (!mounted) return;
+
+    // Use the ROOT navigator to blow away the entire stack
+    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LandingScreen()),
+          (route) => false,
+    );
+  }
+
 
   void _showSnack(String msg, {bool isError = false, bool isSuccess = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -535,11 +610,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
   @override
   Widget build(BuildContext context) {
     return Theme(
-      data: ThemeData(
-        brightness: Brightness.light,
+      data: Theme.of(context).copyWith(
         scaffoldBackgroundColor: kSurface,
-        fontFamily: 'SF Pro Display',
-        colorScheme: const ColorScheme.light(primary: kBlue),
       ),
       child: Scaffold(
         backgroundColor: kSurface,
@@ -735,6 +807,29 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
           label: _userData.id,
           color: kBlue.withOpacity(0.08),
           textColor: kBlue,
+        ),
+        GestureDetector(
+          onTap: _logout,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: kError.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: kError.withOpacity(0.2)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.logout_rounded, size: 14, color: kError),
+                SizedBox(width: 5),
+                Text('Logout',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: kError)),
+              ],
+            ),
+          ),
         ),
       ],
     ),
@@ -1311,6 +1406,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
           icon: Icons.check_rounded,
           loading: _saving,
           onPressed: _isDirty && !_saving ? _save : null,
+
         ),
       ],
     ),

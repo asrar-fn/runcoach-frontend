@@ -5,6 +5,7 @@ import './CoachDashboard.dart'; // Import the new CoachDashboard
 import './AthleteDashboard.dart'; // Import the AthleteDashboardApp
 import '../services/api_service.dart';
 import '../services/auth_storage_service.dart';
+import './register_screen.dart';
 
 class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
@@ -163,7 +164,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                   Icon(
                     Icons.lock_open_rounded,
                     size: 80,
-                    color: colorScheme.primary,
+                    color: const Color(0xFF4285F4),
                   ),
                   const SizedBox(height: 30),
                   Text(
@@ -201,7 +202,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(15),
-                        borderSide: BorderSide(color: colorScheme.primary, width: 2),
+                        borderSide: BorderSide(color: const Color(0xFF4285F4), width: 2),
                       ),
                       filled: true,
                       fillColor: colorScheme.surface,
@@ -237,7 +238,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(15),
-                        borderSide: BorderSide(color: colorScheme.primary, width: 2),
+                        borderSide: BorderSide(color: const Color(0xFF4285F4), width: 2),
                       ),
                       filled: true,
                       fillColor: colorScheme.surface,
@@ -268,12 +269,12 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     child: ElevatedButton(
                       onPressed: _isLoading ? null : _login,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: colorScheme.secondary,
+                        backgroundColor: const Color(0xFF4285F4),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(30),
                         ),
                         elevation: 8,
-                        shadowColor: colorScheme.secondary.withOpacity(0.4),
+                        shadowColor: const Color(0xFF4285F4).withOpacity(0.4),
                       ),
                       child: _isLoading
                           ? CircularProgressIndicator(color: colorScheme.onSecondary)
@@ -297,7 +298,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     child: Text(
                       'Forgot Password?',
                       style: textTheme.titleMedium?.copyWith(
-                        color: colorScheme.primary,
+                        color: const Color(0xFF4285F4),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -312,14 +313,16 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                       ),
                       TextButton(
                         onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Sign Up Feature not implemented.')),
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const RegisterScreen(),
+                            ),
                           );
                         },
                         child: Text(
                           'Sign Up',
                           style: textTheme.titleMedium?.copyWith(
-                            color: colorScheme.primary,
+                            color: const Color(0xFF4285F4),
                             fontWeight: FontWeight.w600,
                           ),
                         ),

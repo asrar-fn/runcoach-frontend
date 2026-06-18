@@ -172,8 +172,9 @@ class _AthletePaceCalculatorScreenState
         final dist = a['distanceKm'] ?? a['distance'] ?? 0;
         final dur = a['durationMin'] ?? a['duration'] ?? 0;
         final dateRaw = a['date'] ?? a['createdAt'];
-        final DateTime? date =
-        dateRaw != null ? DateTime.tryParse(dateRaw) : null;
+        final DateTime? date = dateRaw != null
+            ? DateTime.tryParse(dateRaw)?.toLocal()
+            : null;
         final bool fromStrava = _isFromStrava(a);
         final String pace = _calculatePace(dist, dur);
         final String runType = _runType(date);

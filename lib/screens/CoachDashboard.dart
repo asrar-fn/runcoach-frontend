@@ -70,6 +70,7 @@ class _CoachDashboardState extends State<CoachDashboard> {
   String _planFilter   = 'all';
   String _statusFilter = 'all'; // 'all' | 'peak' | 'on_track' | 'needs_focus' | 'no_data'
   String _selectedTab  = 'dashboard';
+  int _refreshKey = 0;
 
   late UserService _userService;
   AthletePerformanceService? _performanceService;
@@ -205,6 +206,16 @@ class _CoachDashboardState extends State<CoachDashboard> {
       if (response.statusCode == 200 && mounted) {
         setState(() => _coachJson = jsonDecode(response.body));
       }
+      if (response.statusCode == 200 && mounted) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        // Ensure specializations is always List<String>, never raw List<dynamic>
+        if (decoded['specializations'] != null) {
+          decoded['specializations'] = List<String>.from(
+              (decoded['specializations'] as List<dynamic>).map((e) => e.toString())
+          );
+        }
+        setState(() => _coachJson = decoded);
+      }
     } catch (e) {
       debugPrint('Failed to fetch coach profile: $e');
     }
@@ -254,7 +265,7 @@ class _CoachDashboardState extends State<CoachDashboard> {
       context,
       athleteId:   athlete.id,
       athleteName: athlete.name,
-      onAssigned:  () => setState(() {}),
+      onAssigned:  () => setState(() => _refreshKey++),
     );
   }
 
@@ -467,11 +478,17 @@ class _CoachDashboardState extends State<CoachDashboard> {
           ),
           IconButton(
             icon: Icon(Icons.person_outline, color: colorScheme.onBackground),
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+            onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => ProfileSettingsScreen(
                   isCoach: _isCurrentUserCoach,
-                  userJson: _coachJson,  // ← was const {}
-                ))),
+                  userJson: _coachJson,
+                ),
+              ));
+              if (!mounted) return;
+              // Refetch so the dashboard shows the latest coach profile
+              await _fetchCoachProfile();
+            },
           ),
         ],
       ),
@@ -787,6 +804,7 @@ class _CoachDashboardState extends State<CoachDashboard> {
                                               authToken: '',
                                             ),
                                         unreadCount: _unreadCache[athlete.id] ?? 0,
+                                        refreshKey: _refreshKey,
                                         onTap: () =>
                                             Navigator.of(context).push(
                                               MaterialPageRoute(
