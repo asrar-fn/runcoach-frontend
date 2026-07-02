@@ -1,51 +1,40 @@
 import 'package:flutter/material.dart';
 
 class AppLogo extends StatelessWidget {
-  final double size;
-  final TextStyle? textStyle;
+  final double? width;
+  final double? height;
+  final BoxFit fit;
+  final AlignmentGeometry alignment;
 
+  static const String _logoUrl =
+      'https://raw.githubusercontent.com/asrar-fn/runcoach-frontend/main/web/icons/endurepeak_logo.png';
+
+  // ✅ Remove 'const' from constructor — network widgets can't be const
   const AppLogo({
     super.key,
-    this.size = 28,
-    this.textStyle,
+    this.width,
+    this.height,
+    this.fit = BoxFit.contain,
+    this.alignment = Alignment.centerLeft,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [
-                Color(0xFF2196F3), // Blue
-                Color(0xFFFF7043), // Orange
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(size / 4),
-          ),
-          child: Icon(
-            Icons.directions_run, // Example icon, could be a custom SVG later
-            color: Colors.white,
-            size: size * 0.6,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          'Stride',
-          style: textStyle ??
-              TextStyle(
-                fontSize: size * 0.8,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-        ),
-      ],
+    return Image.network(
+      _logoUrl,
+      width: width,
+      height: height,
+      fit: fit,
+      alignment: alignment,
+      loadingBuilder: (context, child, progress) =>
+      progress == null ? child : const SizedBox.shrink(),
+      errorBuilder: (context, error, stack) => Image.asset(
+        'assets/images/endurepeak_logo.png',
+        width: width,
+        height: height,
+        fit: fit,
+        alignment: alignment,
+      ),
     );
   }
 }

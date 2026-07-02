@@ -8,6 +8,8 @@ import '../services/api_service.dart';
 import '../providers/api_providers.dart';
 import './landing_screen.dart';
 import './sign_in_screen.dart';
+import 'package:flutter/services.dart';
+
 
 // --- Helper Data ---
 const Map<String, List<String>> countryToCities = {
@@ -144,6 +146,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   List<String> _specializations = [];
   final TextEditingController _bioController = TextEditingController();
 
+  bool _isLoading = false;
+
   // ── Lifecycle ────────────────────────────────────────────────────────────
   @override
   void initState() {
@@ -206,6 +210,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   // ── Registration submit ──────────────────────────────────────────────────
   Future<void> _handleRegister() async {
+    if (_isLoading) return;
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedType == 'coach' && _specializations.isEmpty) {
@@ -292,6 +297,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       payload['bio'] = _bioController.text;
       payload['isApproved'] = false;
     }
+
+    setState(() => _isLoading = true);
 
     try {
       await ref.read(registerProvider(payload).future);
@@ -390,9 +397,73 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Registration failed: ${e.toString()}')),
+      // Clean up the error message — strip "Exception:" prefixes
+      String rawMessage = e.toString();
+      String cleanMessage = rawMessage
+          .replaceAll('Exception: ', '')
+          .replaceAll('exception: ', '')
+          .trim();
+
+      showDialog(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                height: 72,
+                width: 72,
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.red.shade300, width: 2),
+                ),
+                child: Icon(Icons.error_rounded, color: Colors.red.shade600, size: 48),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Registration Failed',
+                style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red.shade700,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                cleanMessage,
+                style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(dialogContext).colorScheme.onSurface.withOpacity(0.7),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade600,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Try Again', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
       );
+    }
+    finally {
+      if (mounted) setState(() => _isLoading = false); // ← always reset
     }
   }
 
@@ -448,31 +519,30 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               const SizedBox(height: 24),
               _buildTermsAndConditions(colorScheme, textTheme),
               const SizedBox(height: 24),
-              Consumer(
-                builder: (context, ref, child) {
-                  final registrationState =
-                  ref.watch(registerProvider(const {'dummy': true}));
-                  return ElevatedButton(
-                    onPressed: registrationState.isLoading
-                        ? null
-                        : _handleRegister,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: colorScheme.primary,
-                      foregroundColor: colorScheme.onPrimary,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30)),
-                    ),
-                    child: registrationState.isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : Text(
-                      'Complete Registration',
-                      style: textTheme.titleMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold),
-                    ),
-                  );
-                },
+              ElevatedButton(
+                onPressed: _isLoading ? null : _handleRegister,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colorScheme.primary,
+                  foregroundColor: colorScheme.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                ),
+                child: _isLoading
+                    ? const SizedBox(
+                  height: 22,
+                  width: 22,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2.5,
+                  ),
+                )
+                    : Text(
+                  'Complete Registration',
+                  style: textTheme.titleMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
               Center(
@@ -600,12 +670,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 child: TextFormField(
                   controller: _mobileController,
                   keyboardType: TextInputType.phone,
+                  maxLength: 10,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: const InputDecoration(
                     border: InputBorder.none,
                     hintText: 'Your mobile number',
+                    counterText: '', // hides the little "0/10" counter Flutter adds automatically
                   ),
-                  validator: (val) =>
-                  val!.isEmpty ? 'Enter your mobile number' : null,
+                  validator: (val) {
+                    if (val == null || val.isEmpty) return 'Enter your mobile number';
+                    if (val.length != 10) return 'Enter a valid 10-digit mobile number';
+                    return null;
+                  },
                 ),
               ),
             ],

@@ -6,6 +6,7 @@ import './AthleteDashboard.dart'; // Import the AthleteDashboardApp
 import '../services/api_service.dart';
 import '../services/auth_storage_service.dart';
 import './register_screen.dart';
+import './admin_dashboard_screen.dart';
 
 class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
@@ -88,8 +89,10 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
         final token = response["token"];
 
         await AuthStorageService.saveAuthData(
-          user["id"],
+          user['id'] ?? '',
           token,
+          userId:   user['id'] ?? '',
+          userRole: user['role'] ?? '',
         );
 
         print("User: $user");
@@ -98,6 +101,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
         if (!mounted) return;
 
         // ✅ ROLE-BASED NAVIGATION
+        // ✅ ROLE-BASED NAVIGATION
         if (user["role"] == "coach") {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (_) => const CoachDashboard()),
@@ -105,6 +109,10 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
         } else if (user["role"] == "athlete") {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (_) => const AthleteDashboardApp()),
+          );
+        } else if (user["role"] == "admin") {               // ← add this
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
           );
         } else {
           setState(() {
@@ -176,7 +184,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'Enter your credentials to continue.',
+                    'Enter your credentials to continue',
                     style: textTheme.titleMedium?.copyWith(
                       color: colorScheme.onBackground.withOpacity(0.7),
                     ),
@@ -188,7 +196,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     style: TextStyle(color: colorScheme.onSurface),
                     decoration: InputDecoration(
                       labelText: 'Email',
-                      hintText: 'your.email@example.com',
+                      hintText: 'youremail@example.com',
                       labelStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.8)),
                       hintStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.5)),
                       prefixIcon: Icon(Icons.email, color: colorScheme.primary),

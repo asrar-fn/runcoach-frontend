@@ -808,29 +808,29 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
           color: kBlue.withOpacity(0.08),
           textColor: kBlue,
         ),
-        GestureDetector(
-          onTap: _logout,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            decoration: BoxDecoration(
-              color: kError.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: kError.withOpacity(0.2)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(Icons.logout_rounded, size: 14, color: kError),
-                SizedBox(width: 5),
-                Text('Logout',
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: kError)),
-              ],
-            ),
-          ),
-        ),
+        // GestureDetector(
+        //   onTap: _logout,
+        //   child: Container(
+        //     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        //     decoration: BoxDecoration(
+        //       color: kError.withOpacity(0.08),
+        //       borderRadius: BorderRadius.circular(20),
+        //       border: Border.all(color: kError.withOpacity(0.2)),
+        //     ),
+        //     child: Row(
+        //       mainAxisSize: MainAxisSize.min,
+        //       children: const [
+        //         Icon(Icons.logout_rounded, size: 14, color: kError),
+        //         SizedBox(width: 5),
+        //         Text('Logout',
+        //             style: TextStyle(
+        //                 fontSize: 12,
+        //                 fontWeight: FontWeight.w600,
+        //                 color: kError)),
+        //       ],
+        //     ),
+        //   ),
+        // ),
       ],
     ),
   );
@@ -1367,21 +1367,21 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen>
     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
     child: Row(
       children: [
-        if (_isDirty) ...[
-          Container(
-            width: 7,
-            height: 7,
-            decoration: const BoxDecoration(
-                color: kOrange, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 6),
-          const Text('Unsaved changes',
-              style: TextStyle(
-                  fontSize: 12,
-                  color: kMuted,
-                  fontWeight: FontWeight.w500)),
-        ],
-        const Spacer(),
+        // if (_isDirty) ...[
+        //   Container(
+        //     width: 7,
+        //     height: 7,
+        //     decoration: const BoxDecoration(
+        //         color: kOrange, shape: BoxShape.circle),
+        //   ),
+        //   const SizedBox(width: 6),
+        //   const Text('Unsaved changes',
+        //       style: TextStyle(
+        //           fontSize: 12,
+        //           color: kMuted,
+        //           fontWeight: FontWeight.w500)),
+        // ],
+        // const Spacer(),
         if (_isDirty)
           GestureDetector(
             onTap: _discard,
@@ -1565,11 +1565,15 @@ class _TextInput extends StatefulWidget {
   final String hint;
   final TextInputType keyboard;
   final ValueChanged<String> onChanged;
+  final List<TextInputFormatter>? inputFormatters;
+  final int? maxLength;
   const _TextInput({
     required this.value,
     required this.hint,
     this.keyboard = TextInputType.text,
     required this.onChanged,
+    this.inputFormatters,
+    this.maxLength,
   });
 
   @override
@@ -1603,9 +1607,13 @@ class _TextInputState extends State<_TextInput> {
   Widget build(BuildContext context) => TextFormField(
     controller: _c,
     keyboardType: widget.keyboard,
+    inputFormatters: widget.inputFormatters,
+    maxLength: widget.maxLength,
     style: const TextStyle(fontSize: 14, color: kText),
-    decoration:
-    _inputDecoration.copyWith(hintText: widget.hint),
+    decoration: _inputDecoration.copyWith(
+      hintText: widget.hint,
+      counterText: widget.maxLength != null ? '' : null,
+    ),
     onChanged: widget.onChanged,
   );
 }
@@ -1696,6 +1704,8 @@ class _PhoneInput extends StatelessWidget {
           value: number,
           hint: 'Mobile number',
           keyboard: TextInputType.phone,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          maxLength: 10,
           onChanged: onNumberChanged,
         ),
       ),

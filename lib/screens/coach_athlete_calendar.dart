@@ -76,9 +76,25 @@ class _CalActivity {
     final rawDur = json['durationMin'] ?? json['duration'];
     if (rawDur != null) dur = int.tryParse(rawDur.toString());
 
+    // ✅ Robust date parsing — handles ISO string AND Unix ms timestamps
+    DateTime? parsedDate;
+    final rawDate = json['date'];
+    final rawCreated = json['createdAt'];
+
+    if (rawDate != null && rawDate.toString().trim().isNotEmpty) {
+      // Prefer 'date' field — always an ISO string
+      parsedDate = _safeLocalDate(rawDate.toString());
+    } else if (rawCreated is int) {
+      parsedDate = DateTime.fromMillisecondsSinceEpoch(rawCreated, isUtc: true).toLocal();
+    } else if (rawCreated is double) {
+      parsedDate = DateTime.fromMillisecondsSinceEpoch(rawCreated.toInt(), isUtc: true).toLocal();
+    } else if (rawCreated != null) {
+      parsedDate = _safeLocalDate(rawCreated.toString());
+    }
+
     return _CalActivity(
       id: json['id'] ?? json['_id'] ?? '',
-      date: _safeLocalDate(json['date'] ?? json['createdAt']),
+      date: parsedDate,
       distanceKm: dist,
       durationMin: dur,
       type: json['type'],
@@ -88,21 +104,35 @@ class _CalActivity {
 
 DateTime? _safeLocalDate(dynamic v) {
   if (v == null) return null;
+
+  // ✅ Handle Unix ms timestamps
+  if (v is int) {
+    return DateTime.fromMillisecondsSinceEpoch(v, isUtc: true).toLocal();
+  }
+  if (v is double) {
+    return DateTime.fromMillisecondsSinceEpoch(v.toInt(), isUtc: true).toLocal();
+  }
+
   final s = v.toString().trim();
-  // Date-only string → parse as local
-  final dateOnly = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(s);
-  if (dateOnly != null) {
-    return DateTime(
-      int.parse(dateOnly.group(1)!),
-      int.parse(dateOnly.group(2)!),
-      int.parse(dateOnly.group(3)!),
-    );
+  // Date-only string → parse as local midnight
+  if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(s)) {
+    final parts = s.split('-');
+    return DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
   }
   try {
     return DateTime.parse(s).toLocal();
   } catch (_) {
     return null;
   }
+}
+
+String _timeOfDayLabel(DateTime? dt) {
+  if (dt == null) return 'Run';
+  final hour = dt.hour;
+  if (hour >= 5 && hour < 12)  return 'Morning Run';
+  if (hour >= 12 && hour < 17) return 'Afternoon Run';
+  if (hour >= 17 && hour < 21) return 'Evening Run';
+  return 'Night Run';
 }
 
 String _dayKey(DateTime? d) {
@@ -229,7 +259,11 @@ class _CoachAthleteCalendarState extends State<CoachAthleteCalendar>
 
   List<_CalActivity> _activitiesForDay(DateTime day) {
     final key = _dayKey(day);
-    return _activities.where((a) => _dayKey(a.date) == key).toList();
+    return _activities.where((a) {
+      // ✅ Check both date and createdAt sys
+      final dateKey = _dayKey(a.date);
+      return dateKey == key;
+    }).toList();
   }
 
   // ─── Week / Month navigation ──────────────────────────────────────────────
@@ -738,7 +772,6 @@ class _AssignmentRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final dayKey = _dayKey(assignment.scheduledDate);
     final matched = activities
-        .where((a) => _dayKey(a.date) == dayKey)
         .fold(0.0, (s, a) => s + (a.distanceKm ?? 0));
     final assigned = assignment.distanceKm ?? 0;
     final pct = assigned > 0
@@ -793,6 +826,7 @@ class _AssignmentRow extends StatelessWidget {
         ]),
         const SizedBox(height: 6),
         // Stats row
+        // After the existing Wrap of chips, replace with:
         Wrap(spacing: 16, children: [
           if (assignment.distanceKm != null)
             _Chip(
@@ -804,11 +838,30 @@ class _AssignmentRow extends StatelessWidget {
                 icon: Icons.access_time,
                 label: '${assignment.durationMin} min',
                 color: medium),
-          if (matched > 0)
+          if (matched > 0 && completed) ...[
             _Chip(
                 icon: Icons.check,
                 label: '${matched.toStringAsFixed(1)} km logged',
                 color: green),
+            // ← NEW: logged pace
+            Builder(builder: (_) {
+              final totalDur = activities.fold(0, (s, a) => s + (a.durationMin ?? 0));
+              if (matched <= 0 || totalDur <= 0) return const SizedBox.shrink();
+              final paceDecimal = totalDur / matched;
+              final pm = paceDecimal.floor();
+              final ps = ((paceDecimal - pm) * 60).round();
+              return _Chip(
+                icon: Icons.speed,
+                label: '$pm:${ps.toString().padLeft(2, '0')} /km',
+                color: green,
+              );
+            }),
+          ] else if (matched > 0) ...[
+            _Chip(
+                icon: Icons.check,
+                label: '${matched.toStringAsFixed(1)} km logged',
+                color: green),
+          ],
         ]),
         // Progress bar
         if (assigned > 0) ...[
@@ -881,7 +934,7 @@ class _ActivityRow extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(activity.type ?? 'Activity',
+            Text(_timeOfDayLabel(activity.date),
                 style: GoogleFonts.poppins(
                     fontSize: 13, fontWeight: FontWeight.w600, color: dark)),
             Wrap(spacing: 12, children: [

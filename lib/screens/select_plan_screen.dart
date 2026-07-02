@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'package:runcoach/screens/coach_selection_screen.dart';
+import '../screens/coach_selection_screen.dart';
 
 class SelectPlanScreen extends ConsumerStatefulWidget {
   const SelectPlanScreen({super.key});

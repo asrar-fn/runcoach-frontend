@@ -124,30 +124,22 @@ List<Workout> mapDataToWorkouts({
       final dateKey = localDayKey(a.scheduledDate) ?? localDayKey(DateTime.now())!;
       final typeKey = (a.workoutType ?? "").toLowerCase();
       final wt = workoutTypes.containsKey(typeKey) ? typeKey : "custom";
+      final hasLoggedActivity = activitySet.contains(dateKey);
 
-      result.add(Workout(
-        id: a.id ?? 'assign-${assignments.indexOf(a)}',
-        date: dateKey,
-        type: wt,
-        title: a.workoutType ?? "Coached Workout",
-        duration: a.durationMin != null ? "${a.durationMin} min" : null,
-        distance: a.distanceKm != null ? "${a.distanceKm}km" : null,
-        completed: activitySet.contains(dateKey),
-      ));
+      // ✅ Only show the assignment if no activity was logged that day
+      // (once logged, the actual activity entries will show instead)
+      if (!hasLoggedActivity) {
+        result.add(Workout(
+          id: a.id ?? 'assign-${assignments.indexOf(a)}',
+          date: dateKey,
+          type: wt,
+          title: a.workoutType ?? "Coached Workout",
+          duration: a.durationMin != null ? "${a.durationMin} min" : null,
+          distance: a.distanceKm != null ? "${a.distanceKm}km" : null,
+          completed: false,
+        ));
+      }
     }
-  // } else {
-  //   for (var g in goals) {
-  //     final dateKey = localDayKey(g.date)!;
-  //     result.add(Workout(
-  //       id: 'goal-${g.date.millisecondsSinceEpoch}',
-  //       date: dateKey,
-  //       type: 'custom',
-  //       title: "Daily Goal",
-  //       duration: g.durationMin > 0 ? "${g.durationMin} min" : null,
-  //       distance: g.distanceKm > 0 ? "${g.distanceKm}km" : null,
-  //       completed: activitySet.contains(dateKey),
-  //     ));
-  //   }
   }
 
   for (var a in activities) {

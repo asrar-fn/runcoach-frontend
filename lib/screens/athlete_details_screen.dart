@@ -6,7 +6,8 @@ import 'dart:convert';
 import '../models/athlete.dart';
 import '../services/auth_storage_service.dart';
 import './coach_athlete_calendar.dart';
-import '../config/api_config.dart'; // adjust path as needed
+import '../config/api_config.dart';
+import '../widgets/assign_workout_bottom_sheet.dart'; // ← same sheet used by dashboard
 
 // ─── Models ───────────────────────────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ class Assignment {
   final int? duration;
   final String? title;
   final String? instructions;
-  final String status; // "scheduled" | "completed"
+  final String status;
 
   Assignment({
     required this.id,
@@ -71,6 +72,8 @@ class Activity {
   final double? distanceKm;
   final int? durationMin;
   final String? type;
+  final String? stravaId;
+  final String localDateKey;
 
   Activity({
     required this.id,
@@ -79,6 +82,8 @@ class Activity {
     this.distanceKm,
     this.durationMin,
     this.type,
+    this.stravaId,
+    required this.localDateKey,
   });
 
   factory Activity.fromJson(Map<String, dynamic> json) {
@@ -90,13 +95,59 @@ class Activity {
     final rawDur = json['durationMin'] ?? json['duration'];
     if (rawDur != null) dur = int.tryParse(rawDur.toString());
 
+    String? createdAtStr;
+    final rawCreated = json['createdAt'];
+    if (rawCreated is int) {
+      createdAtStr = DateTime.fromMillisecondsSinceEpoch(rawCreated, isUtc: true)
+          .toIso8601String();
+    } else if (rawCreated is double) {
+      createdAtStr = DateTime.fromMillisecondsSinceEpoch(rawCreated.toInt(), isUtc: true)
+          .toIso8601String();
+    } else {
+      createdAtStr = rawCreated?.toString();
+    }
+
+    String localKey = '';
+    final rawDate = json['date'];
+    if (rawDate != null && rawDate.toString().trim().isNotEmpty) {
+      final s = rawDate.toString().trim();
+      if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(s)) {
+        localKey = s;
+      } else {
+        final parsed = DateTime.tryParse(s);
+        if (parsed != null) {
+          final local = parsed.toLocal();
+          localKey = '${local.year}-'
+              '${local.month.toString().padLeft(2, '0')}-'
+              '${local.day.toString().padLeft(2, '0')}';
+        }
+      }
+    } else {
+      DateTime? local;
+      if (rawCreated is int) {
+        local = DateTime.fromMillisecondsSinceEpoch(rawCreated, isUtc: true).toLocal();
+      } else if (rawCreated is double) {
+        local = DateTime.fromMillisecondsSinceEpoch(rawCreated.toInt(), isUtc: true).toLocal();
+      } else if (rawCreated != null) {
+        final parsed = DateTime.tryParse(rawCreated.toString());
+        if (parsed != null) local = parsed.toLocal();
+      }
+      if (local != null) {
+        localKey = '${local.year}-'
+            '${local.month.toString().padLeft(2, '0')}-'
+            '${local.day.toString().padLeft(2, '0')}';
+      }
+    }
+
     return Activity(
       id: json['id'] ?? json['_id'] ?? '',
-      date: json['date'],
-      createdAt: json['createdAt'],
+      date: json['date']?.toString(),
+      createdAt: createdAtStr,
       distanceKm: dist,
       durationMin: dur,
       type: json['type'],
+      stravaId: json['stravaId']?.toString(),
+      localDateKey: localKey,
     );
   }
 }
@@ -106,6 +157,8 @@ class Activity {
 DateTime? _parseDate(dynamic input) {
   if (input == null) return null;
   if (input is DateTime) return input;
+  if (input is int) return DateTime.fromMillisecondsSinceEpoch(input, isUtc: true);
+  if (input is double) return DateTime.fromMillisecondsSinceEpoch(input.toInt(), isUtc: true);
   if (input is String) {
     try {
       final dateOnly = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(input);
@@ -127,7 +180,17 @@ DateTime? _parseDate(dynamic input) {
 String _dayKey(dynamic input) {
   final d = _parseDate(input);
   if (d == null) return '';
-  return DateFormat('yyyy-MM-dd').format(d);
+  final local = d.toLocal();
+  return DateFormat('yyyy-MM-dd').format(local);
+}
+
+String? _formatPace(double? distanceKm, int? durationMin) {
+  if (distanceKm == null || distanceKm <= 0) return null;
+  if (durationMin == null || durationMin <= 0) return null;
+  final paceDecimal = durationMin / distanceKm;
+  final paceMinutes = paceDecimal.floor();
+  final paceSeconds = ((paceDecimal - paceMinutes) * 60).round();
+  return '$paceMinutes:${paceSeconds.toString().padLeft(2, '0')} /km';
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -148,32 +211,37 @@ class AthleteDetailsScreen extends StatefulWidget {
 
 class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
     with SingleTickerProviderStateMixin {
-  // ── Tab state
   late TabController _tabController;
   int _tabIndex = 0;
 
-  // ── API data
   List<Assignment> _assignments = [];
   List<Activity> _activities = [];
   bool _loadingAssignments = true;
   bool _loadingActivities = true;
   String? _error;
 
-  // ── Workout-detail popup
   bool _popupOpen = false;
   bool _popupEditing = false;
   Assignment? _popupAssignment;
   late TextEditingController _ctrlType, _ctrlDist, _ctrlTime, _ctrlNotes;
 
+  int? _matchedDuration(Assignment a) {
+    final day = _dayKey(a.scheduledDate);
+    final total = _activities
+        .where((act) => act.localDateKey == day)
+        .fold(0, (s, act) => s + (act.durationMin ?? 0));
+    return total > 0 ? total : null;
+  }
+
   // ─── Colors ─────────────────────────────────────────────────────────────────
-  static const Color _blue = Color(0xFF2575FC);
+  static const Color _blue   = Color(0xFF2575FC);
   static const Color _purple = Color(0xFF6A11CB);
   static const Color _bgGrey = Color(0xFFF0F2F5);
-  static const Color _dark = Color(0xFF2C3E50);
+  static const Color _dark   = Color(0xFF2C3E50);
   static const Color _medium = Color(0xFF7F8C8D);
-  static const Color _green = Color(0xFF2ECC71);
+  static const Color _green  = Color(0xFF2ECC71);
   static const Color _orange = Color(0xFFF7941D);
-  static const Color _red = Color(0xFFE74C3C);
+  static const Color _red    = Color(0xFFE74C3C);
   static const Color _cardBg = Colors.white;
 
   static const LinearGradient _blueGradient = LinearGradient(
@@ -191,9 +259,9 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
           setState(() => _tabIndex = _tabController.index);
         }
       });
-    _ctrlType = TextEditingController();
-    _ctrlDist = TextEditingController();
-    _ctrlTime = TextEditingController();
+    _ctrlType  = TextEditingController();
+    _ctrlDist  = TextEditingController();
+    _ctrlTime  = TextEditingController();
     _ctrlNotes = TextEditingController();
     _fetchData();
   }
@@ -224,15 +292,13 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
     try {
       final token = await _getToken();
       final res = await http.get(
-        Uri.parse(
-            '${ApiConfig.baseUrl}/api/assignments/athlete/${widget.athleteId}'),
+        Uri.parse('${ApiConfig.baseUrl}/api/assignments/athlete/${widget.athleteId}'),
         headers: {'Authorization': 'Bearer $token'},
       );
       if (res.statusCode == 200) {
         final List data = jsonDecode(res.body);
         setState(() {
           _assignments = data.map((e) => Assignment.fromJson(e)).toList();
-          // Sort newest first
           _assignments.sort((a, b) =>
               (_dayKey(b.scheduledDate)).compareTo(_dayKey(a.scheduledDate)));
         });
@@ -251,15 +317,21 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
     try {
       final token = await _getToken();
       final res = await http.get(
-        Uri.parse(
-            '${ApiConfig.baseUrl}/api/activities/athlete/${widget.athleteId}'),
+        Uri.parse('${ApiConfig.baseUrl}/api/activities/athlete/${widget.athleteId}'),
         headers: {'Authorization': 'Bearer $token'},
       );
       if (res.statusCode == 200) {
         final List data = jsonDecode(res.body);
-        setState(() {
-          _activities = data.map((e) => Activity.fromJson(e)).toList();
-        });
+        final allActivities = data.map((e) => Activity.fromJson(e)).toList();
+        final seen   = <String>{};
+        final deduped = <Activity>[];
+        for (final a in allActivities) {
+          final key = (a.stravaId != null && a.stravaId!.isNotEmpty)
+              ? 'strava_${a.stravaId}'
+              : 'id_${a.id}_${a.date}';
+          if (seen.add(key)) deduped.add(a);
+        }
+        setState(() => _activities = deduped);
       }
     } catch (e) {
       debugPrint('Activities fetch error: $e');
@@ -268,39 +340,38 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
     }
   }
 
-  Future<void> _updateAssignment() async {
+  Future<void> _updateAssignment(BuildContext dialogContext) async {
     if (_popupAssignment == null) return;
     try {
       final token = await _getToken();
       await http.put(
-        Uri.parse(
-            '${ApiConfig.baseUrl}/api/assignments/${_popupAssignment!.id}'),
+        Uri.parse('${ApiConfig.baseUrl}/api/assignments/${_popupAssignment!.id}'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
         body: jsonEncode({
           'workoutType': _ctrlType.text,
-          'distance': double.tryParse(_ctrlDist.text),
-          'duration': int.tryParse(_ctrlTime.text),
+          'distance':    double.tryParse(_ctrlDist.text),
+          'duration':    int.tryParse(_ctrlTime.text),
           'instructions': _ctrlNotes.text,
         }),
       );
       await _fetchAssignments();
+      if (dialogContext.mounted) Navigator.pop(dialogContext);
       _toast('Saved', 'Assignment updated', color: _green);
     } catch (e) {
       _toast('Error', e.toString(), color: _red);
     }
     setState(() {
-      _popupOpen = false;
-      _popupEditing = false;
+      _popupOpen       = false;
+      _popupEditing    = false;
       _popupAssignment = null;
     });
   }
 
   Future<void> _deleteAssignment(String id) async {
-    final confirmed = await _showConfirmDialog(
-        'Delete Workout?', 'This cannot be undone.');
+    final confirmed = await _showConfirmDialog('Delete Workout?', 'This cannot be undone.');
     if (!confirmed) return;
     try {
       final token = await _getToken();
@@ -319,37 +390,53 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
     }
   }
 
-  // ─── Derived data ───────────────────────────────────────────────────────────
+  // ─── Open the assign sheet (same one used from the dashboard tile) ──────────
+  void _openAssignSheet() {
+    AssignWorkoutBottomSheet.show(
+      context,
+      athleteId:   widget.athleteId,
+      athleteName: widget.athlete.name,
+      onAssigned:  () {
+        // Refresh assignments after a new one is created
+        _fetchAssignments();
+      },
+    );
+  }
 
-  /// Only show scheduled + completed, filter out anything else
+  // ─── Derived data ────────────────────────────────────────────────────────────
+
   List<Assignment> get _filteredAssignments => _assignments
       .where((a) => a.status == 'scheduled' || a.status == 'completed')
       .toList();
 
   Set<String> get _activityDays => _activities
-      .map((a) => _dayKey(a.date ?? a.createdAt))
+      .map((a) => a.localDateKey)
       .where((k) => k.isNotEmpty)
       .toSet();
 
   bool _isCompleted(Assignment a) {
     if (a.status == 'completed') return true;
-    return _activityDays.contains(_dayKey(a.scheduledDate));
+    final assigned = a.distance ?? 0;
+    final logged   = _matchedKm(a);
+    if (assigned <= 0) return _activityDays.contains(_dayKey(a.scheduledDate));
+    return logged >= assigned * 0.80;
   }
 
   double _matchedKm(Assignment a) {
     final day = _dayKey(a.scheduledDate);
     return _activities
-        .where((act) => _dayKey(act.date ?? act.createdAt) == day)
+        .where((act) => act.localDateKey == day)
         .fold(0.0, (s, act) => s + (act.distanceKm ?? 0));
   }
 
   int _progressPct(Assignment a) {
     final assigned = a.distance ?? 0;
-    if (assigned <= 0) return _matchedKm(a) > 0 ? 100 : 0;
-    return ((_matchedKm(a) / assigned) * 100).round().clamp(0, 100);
+    final logged   = _matchedKm(a);
+    if (assigned <= 0) return logged > 0 ? 100 : 0;
+    return ((logged / assigned) * 100).round().clamp(0, 100);
   }
 
-  // ─── UI helpers ─────────────────────────────────────────────────────────────
+  // ─── UI helpers ──────────────────────────────────────────────────────────────
 
   void _toast(String title, String message, {Color? color}) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -379,7 +466,8 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
           TextButton(
               onPressed: () => Navigator.pop(context, true),
               child: Text('Delete',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error))),
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.error))),
         ],
       ),
     ) ??
@@ -388,47 +476,49 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
 
   bool _isDeletable(Assignment a) {
     if (a.status == 'completed') return false;
-    final day = _dayKey(a.scheduledDate);
+    final day   = _dayKey(a.scheduledDate);
     final today = _dayKey(DateTime.now());
     return day.compareTo(today) >= 0;
   }
 
   void _openPopup(Assignment a) {
     _popupAssignment = a;
-    _ctrlType.text = a.workoutType ?? '';
-    _ctrlDist.text = a.distance?.toString() ?? '';
-    _ctrlTime.text = a.duration?.toString() ?? '';
+    _ctrlType.text  = a.workoutType ?? '';
+    _ctrlDist.text  = a.distance?.toString() ?? '';
+    _ctrlTime.text  = a.duration?.toString() ?? '';
     _ctrlNotes.text = a.instructions ?? '';
     setState(() {
-      _popupOpen = true;
+      _popupOpen    = true;
       _popupEditing = false;
     });
     showDialog(
       context: context,
-      builder: (_) => _WorkoutDetailDialog(
-        assignment: a,
-        ctrlType: _ctrlType,
-        ctrlDist: _ctrlDist,
-        ctrlTime: _ctrlTime,
-        ctrlNotes: _ctrlNotes,
-        isEditing: _popupEditing,
+      builder: (dialogContext) => _WorkoutDetailDialog(
+        assignment:   a,
+        ctrlType:     _ctrlType,
+        ctrlDist:     _ctrlDist,
+        ctrlTime:     _ctrlTime,
+        ctrlNotes:    _ctrlNotes,
+        isEditing:    _popupEditing,
         onToggleEdit: () => setState(() => _popupEditing = !_popupEditing),
-        onSave: _updateAssignment,
+        onSave:       () => _updateAssignment(dialogContext),
         blueGradient: _blueGradient,
-        dark: _dark,
-        blue: _blue,
+        dark:         _dark,
+        blue:         _blue,
       ),
     ).then((_) => setState(() {
-      _popupOpen = false;
-      _popupEditing = false;
+      _popupOpen       = false;
+      _popupEditing    = false;
       _popupAssignment = null;
     }));
   }
 
-  // ─── Build ──────────────────────────────────────────────────────────────────
+  // ─── Build ───────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
     return Scaffold(
       backgroundColor: _bgGrey,
       appBar: AppBar(
@@ -447,27 +537,56 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
           IconButton(
             icon: const Icon(Icons.refresh, color: _medium),
             onPressed: _fetchData,
-          )
+          ),
         ],
       ),
+
+      // ── Floating Assign Workout button ──────────────────────────────────────
+      // floatingActionButton: FloatingActionButton.extended(
+      //   onPressed: _openAssignSheet,
+      //   backgroundColor: _blue,
+      //   elevation: 3,
+      //   icon: const Icon(Icons.add_task_rounded, color: Colors.white, size: 20),
+      //   label: Text(
+      //     'Assign Workout',
+      //     style: GoogleFonts.poppins(
+      //       color: Colors.white,
+      //       fontWeight: FontWeight.w700,
+      //       fontSize: 13,
+      //     ),
+      //   ),
+      // ),
+      // floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        // Extra bottom padding so the FAB never covers content
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _AthleteHeaderCard(athlete: widget.athlete, blue: _blue, dark: _dark, medium: _medium),
+            // ── Athlete header ──────────────────────────────────────────────
+            _AthleteHeaderCard(
+              athlete: widget.athlete,
+              blue:    _blue,
+              dark:    _dark,
+              medium:  _medium,
+              onAssign: _openAssignSheet, // ← also wired to the header button
+            ),
             const SizedBox(height: 16),
+
+            // ── Summary row ─────────────────────────────────────────────────
             _SummaryRow(
               assignments: _filteredAssignments,
-              activities: _activities,
-              blue: _blue,
-              green: _green,
-              dark: _dark,
-              medium: _medium,
+              activities:  _activities,
+              blue:        _blue,
+              green:       _green,
+              dark:        _dark,
+              medium:      _medium,
               isCompleted: _isCompleted,
             ),
             const SizedBox(height: 16),
-            // ── Tabs
+
+            // ── Tabs ────────────────────────────────────────────────────────
             Container(
               decoration: BoxDecoration(
                 color: _cardBg,
@@ -482,9 +601,9 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
                 children: [
                   TabBar(
                     controller: _tabController,
-                    labelColor: _blue,
-                    unselectedLabelColor: _medium,
-                    indicatorColor: _blue,
+                    labelColor:            _blue,
+                    unselectedLabelColor:  _medium,
+                    indicatorColor:        _blue,
                     labelStyle: GoogleFonts.poppins(
                         fontWeight: FontWeight.w600, fontSize: 13),
                     unselectedLabelStyle: GoogleFonts.poppins(fontSize: 13),
@@ -499,33 +618,36 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
                     padding: const EdgeInsets.all(16),
                     child: _tabIndex == 0
                         ? _WorkoutsTab(
-                      assignments: _filteredAssignments,
-                      loading: _loadingAssignments,
-                      error: _error,
-                      isCompleted: _isCompleted,
-                      matchedKm: _matchedKm,
-                      progressPct: _progressPct,
-                      isDeletable: _isDeletable,
-                      onViewDetails: _openPopup,
-                      onDelete: _deleteAssignment,
-                      athleteName: widget.athlete.name,
-                      blue: _blue,
-                      green: _green,
-                      orange: _orange,
-                      red: _red,
-                      dark: _dark,
-                      medium: _medium,
-                      blueGradient: _blueGradient,
+                      assignments:     _filteredAssignments,
+                      loading:         _loadingAssignments,
+                      error:           _error,
+                      isCompleted:     _isCompleted,
+                      matchedKm:       _matchedKm,
+                      progressPct:     _progressPct,
+                      isDeletable:     _isDeletable,
+                      onViewDetails:   _openPopup,
+                      onDelete:        _deleteAssignment,
+                      athleteName:     widget.athlete.name,
+                      blue:            _blue,
+                      green:           _green,
+                      orange:          _orange,
+                      red:             _red,
+                      dark:            _dark,
+                      medium:          _medium,
+                      blueGradient:    _blueGradient,
+                      matchedDuration: _matchedDuration,
+                      onAssign:        _openAssignSheet, // ← empty-state button
                     )
                         : _tabIndex == 1
-                            ? _CalendarTab(
-                          athlete: widget.athlete,
-                          athleteId: widget.athleteId,
-                        )
+                        ? _CalendarTab(
+                      athlete:   widget.athlete,
+                      athleteId: widget.athleteId,
+                    )
                         : _ProfileTab(
-                        athlete: widget.athlete,
-                        dark: _dark,
-                        medium: _medium),
+                      athlete: widget.athlete,
+                      dark:    _dark,
+                      medium:  _medium,
+                    ),
                   ),
                 ],
               ),
@@ -542,11 +664,15 @@ class _AthleteDetailsScreenState extends State<AthleteDetailsScreen>
 class _AthleteHeaderCard extends StatelessWidget {
   final Athlete athlete;
   final Color blue, dark, medium;
-  const _AthleteHeaderCard(
-      {required this.athlete,
-        required this.blue,
-        required this.dark,
-        required this.medium});
+  final VoidCallback onAssign;
+
+  const _AthleteHeaderCard({
+    required this.athlete,
+    required this.blue,
+    required this.dark,
+    required this.medium,
+    required this.onAssign,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -567,58 +693,96 @@ class _AthleteHeaderCard extends StatelessWidget {
           BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10)
         ],
       ),
-      child: Row(
+      child: Column(
         children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                  colors: [blue, const Color(0xFF6A11CB)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(initials,
-                  style: GoogleFonts.poppins(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 20)),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(athlete.name,
-                    style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 18,
-                        color: dark)),
-                Text('${athlete.plan} • ${athlete.experience} level',
-                    style: GoogleFonts.poppins(
-                        fontSize: 13, color: medium)),
-                const SizedBox(height: 6),
-                Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
+          Row(
+            children: [
+              // Avatar
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                      colors: [blue, const Color(0xFF6A11CB)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
                   child: Text(
-                    'Since ${DateFormat('MMM yyyy').format(DateTime.tryParse(athlete.createdAt) ?? DateTime.now())}',
+                    initials,
                     style: GoogleFonts.poppins(
-                        fontSize: 11,
-                        color: blue,
-                        fontWeight: FontWeight.w500),
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 20),
                   ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 16),
+              // Name / plan
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      athlete.name,
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 18,
+                          color: dark),
+                    ),
+                    Text(
+                      '${athlete.plan} • ${athlete.experience} level',
+                      style: GoogleFonts.poppins(fontSize: 13, color: medium),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Since ${DateFormat('MMM yyyy').format(DateTime.tryParse(athlete.createdAt) ?? DateTime.now())}',
+                        style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: blue,
+                            fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
+
+          const SizedBox(height: 16),
+
+          // ── Assign Workout button (prominent, full-width in the card) ──────
+          // SizedBox(
+          //   width: double.infinity,
+          //   child: ElevatedButton.icon(
+          //     onPressed: onAssign,
+          //     icon: const Icon(Icons.add_task_rounded,
+          //         size: 18, color: Colors.white),
+          //     label: Text(
+          //       'Assign Workout',
+          //       style: GoogleFonts.poppins(
+          //         fontWeight: FontWeight.w700,
+          //         fontSize: 14,
+          //         color: Colors.white,
+          //       ),
+          //     ),
+          //     style: ElevatedButton.styleFrom(
+          //       backgroundColor: blue,
+          //       padding: const EdgeInsets.symmetric(vertical: 13),
+          //       shape: RoundedRectangleBorder(
+          //           borderRadius: BorderRadius.circular(10)),
+          //       elevation: 0,
+          //     ),
+          //   ),
+          // ),
         ],
       ),
     );
@@ -631,7 +795,6 @@ class _SummaryRow extends StatelessWidget {
   final List<Assignment> assignments;
   final List<Activity> activities;
   final Color blue, green, dark, medium;
-  // Accept the same isCompleted function used by the cards
   final bool Function(Assignment) isCompleted;
 
   const _SummaryRow({
@@ -646,35 +809,47 @@ class _SummaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final weekStart = now.subtract(Duration(days: now.weekday - 1));
+    final now       = DateTime.now();
+    final weekStart = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
+    final weekEnd   = weekStart.add(
+        const Duration(days: 6, hours: 23, minutes: 59, seconds: 59));
+
     bool inWeek(String? ds) {
       if (ds == null || ds.isEmpty) return false;
-      final d = DateTime.tryParse(ds);
+      final d = _parseDate(ds);
       if (d == null) return false;
-      return d
-          .isAfter(weekStart.subtract(const Duration(seconds: 1))) &&
-          d.isBefore(weekStart.add(const Duration(days: 7)));
+      final dLocal =
+      DateTime(d.toLocal().year, d.toLocal().month, d.toLocal().day);
+      return !dLocal.isBefore(weekStart) &&
+          !dLocal.isAfter(
+              DateTime(weekEnd.year, weekEnd.month, weekEnd.day));
     }
 
     final weekAssign = assignments.where((a) => inWeek(a.scheduledDate));
-    final weekAct = activities.where((a) => inWeek(a.date ?? a.createdAt));
+    final weekAct    = activities.where((a) => inWeek(a.date ?? a.createdAt));
 
     final totalKm = weekAssign.fold(0.0, (s, a) => s + (a.distance ?? 0));
-    final doneKm = weekAct.fold(0.0, (s, a) => s + (a.distanceKm ?? 0));
+    final doneKm  = weekAct.fold(0.0, (s, a) => s + (a.distanceKm ?? 0));
 
-    // Use the same isCompleted logic as the cards (status OR matching activity)
     final completed = assignments.where((a) => isCompleted(a)).length;
     final scheduled = assignments.where((a) => !isCompleted(a)).length;
 
     return Row(
       children: [
-        _SummaryTile('This Week', '${doneKm.toStringAsFixed(1)} / ${totalKm.toStringAsFixed(1)} km',
-            'Distance', blue, dark, medium),
+        _SummaryTile(
+          'This Week',
+          '${doneKm.toStringAsFixed(1)} / ${totalKm.toStringAsFixed(1)} km',
+          'Distance',
+          blue,
+          dark,
+          medium,
+        ),
         const SizedBox(width: 12),
         _SummaryTile('Completed', '$completed', 'Workouts', green, dark, medium),
         const SizedBox(width: 12),
-        _SummaryTile('Scheduled', '$scheduled', 'Upcoming', Colors.orange, dark, medium),
+        _SummaryTile(
+            'Scheduled', '$scheduled', 'Upcoming', Colors.orange, dark, medium),
       ],
     );
   }
@@ -695,7 +870,8 @@ class _SummaryTile extends StatelessWidget {
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)
+            BoxShadow(
+                color: Colors.black.withOpacity(0.04), blurRadius: 8)
           ],
         ),
         child: Column(
@@ -703,7 +879,9 @@ class _SummaryTile extends StatelessWidget {
           children: [
             Text(label,
                 style: GoogleFonts.poppins(
-                    fontSize: 10, color: medium, fontWeight: FontWeight.w500)),
+                    fontSize: 10,
+                    color: medium,
+                    fontWeight: FontWeight.w500)),
             const SizedBox(height: 4),
             Text(value,
                 style: GoogleFonts.poppins(
@@ -734,6 +912,8 @@ class _WorkoutsTab extends StatelessWidget {
   final String athleteName;
   final Color blue, green, orange, red, dark, medium;
   final LinearGradient blueGradient;
+  final int? Function(Assignment) matchedDuration;
+  final VoidCallback onAssign; // ← for empty-state CTA
 
   const _WorkoutsTab({
     required this.assignments,
@@ -753,6 +933,8 @@ class _WorkoutsTab extends StatelessWidget {
     required this.dark,
     required this.medium,
     required this.blueGradient,
+    required this.matchedDuration,
+    required this.onAssign,
   });
 
   @override
@@ -781,13 +963,11 @@ class _WorkoutsTab extends StatelessWidget {
           ));
     }
 
-    // Separate into two lists
-    final scheduledList =
-    assignments.where((a) => !isCompleted(a)).toList();
-    final completedList =
-    assignments.where((a) => isCompleted(a)).toList();
+    final scheduledList = assignments.where((a) => !isCompleted(a)).toList();
+    final completedList = assignments.where((a) => isCompleted(a)).toList();
 
     if (assignments.isEmpty) {
+      // ── Empty state with assign CTA ─────────────────────────────────
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(40),
@@ -795,9 +975,30 @@ class _WorkoutsTab extends StatelessWidget {
             children: [
               Icon(Icons.directions_run, size: 48, color: medium),
               const SizedBox(height: 12),
-              Text('No workouts assigned yet',
+              Text(
+                'No workouts assigned yet',
+                style: GoogleFonts.poppins(
+                    color: medium, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: onAssign,
+                icon: const Icon(Icons.add_task_rounded,
+                    size: 16, color: Colors.white),
+                label: Text(
+                  'Assign First Workout',
                   style: GoogleFonts.poppins(
-                      color: medium, fontWeight: FontWeight.w500)),
+                      color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: blue,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
+                ),
+              ),
             ],
           ),
         ),
@@ -808,59 +1009,98 @@ class _WorkoutsTab extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header
+        // In _WorkoutsTab build(), replace the header Row with this:
+
         Row(
           children: [
             const Icon(Icons.directions_run, size: 20),
             const SizedBox(width: 8),
-            Text('Workout Schedule',
+            Text(
+              'Workout Schedule',
+              style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                  color: dark),
+            ),
+            const Spacer(), // ← pushes button to the right
+            ElevatedButton.icon(
+              onPressed: onAssign,
+              icon: const Icon(Icons.add_task_rounded,
+                  size: 14, color: Colors.white),
+              label: Text(
+                'Assign',
                 style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w700, fontSize: 16, color: dark)),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  color: Colors.white,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: blue,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 18, vertical: 10),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                elevation: 0,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
           ],
         ),
-        Text('Assigned & logged workouts for $athleteName',
-            style: GoogleFonts.poppins(fontSize: 12, color: medium)),
+        Text(
+          'Assigned & logged workouts for $athleteName',
+          style: GoogleFonts.poppins(fontSize: 12, color: medium),
+        ),
         const SizedBox(height: 16),
 
-        // ── Scheduled section
+        // Scheduled section
         if (scheduledList.isNotEmpty) ...[
-          _SectionHeader(label: 'Scheduled', count: scheduledList.length, color: blue),
+          _SectionHeader(
+              label: 'Scheduled',
+              count: scheduledList.length,
+              color: blue),
           const SizedBox(height: 8),
           ...scheduledList.map((a) => _AssignmentCard(
-            assignment: a,
-            completed: false,
-            matched: matchedKm(a),
-            pct: progressPct(a),
-            deletable: isDeletable(a),
-            onView: () => onViewDetails(a),
-            onDelete: () => onDelete(a.id),
-            blue: blue,
-            green: green,
-            orange: orange,
-            red: red,
-            dark: dark,
-            medium: medium,
+            assignment:      a,
+            completed:       false,
+            matched:         matchedKm(a),
+            pct:             progressPct(a),
+            deletable:       isDeletable(a),
+            onView:          () => onViewDetails(a),
+            onDelete:        () => onDelete(a.id),
+            blue:            blue,
+            green:           green,
+            orange:          orange,
+            red:             red,
+            dark:            dark,
+            medium:          medium,
+            matchedDuration: matchedDuration(a),
           )),
           const SizedBox(height: 20),
         ],
 
-        // ── Completed section
+        // Completed section
         if (completedList.isNotEmpty) ...[
-          _SectionHeader(label: 'Completed', count: completedList.length, color: green),
+          _SectionHeader(
+              label: 'Completed',
+              count: completedList.length,
+              color: green),
           const SizedBox(height: 8),
           ...completedList.map((a) => _AssignmentCard(
-            assignment: a,
-            completed: true,
-            matched: matchedKm(a),
-            pct: progressPct(a),
-            deletable: false, // Never delete completed
-            onView: () => onViewDetails(a),
-            onDelete: () {},
-            blue: blue,
-            green: green,
-            orange: orange,
-            red: red,
-            dark: dark,
-            medium: medium,
+            assignment:      a,
+            completed:       true,
+            matched:         matchedKm(a),
+            pct:             progressPct(a),
+            deletable:       false,
+            onView:          () => onViewDetails(a),
+            onDelete:        () {},
+            blue:            blue,
+            green:           green,
+            orange:          orange,
+            red:             red,
+            dark:            dark,
+            medium:          medium,
+            matchedDuration: matchedDuration(a),
           )),
         ],
       ],
@@ -872,7 +1112,8 @@ class _SectionHeader extends StatelessWidget {
   final String label;
   final int count;
   final Color color;
-  const _SectionHeader({required this.label, required this.count, required this.color});
+  const _SectionHeader(
+      {required this.label, required this.count, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -892,7 +1133,8 @@ class _SectionHeader extends StatelessWidget {
                 color: const Color(0xFF2C3E50))),
         const SizedBox(width: 8),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          padding:
+          const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(
             color: color.withOpacity(0.1),
             borderRadius: BorderRadius.circular(10),
@@ -919,6 +1161,7 @@ class _AssignmentCard extends StatelessWidget {
   final VoidCallback onView;
   final VoidCallback onDelete;
   final Color blue, green, orange, red, dark, medium;
+  final int? matchedDuration;
 
   const _AssignmentCard({
     required this.assignment,
@@ -934,20 +1177,20 @@ class _AssignmentCard extends StatelessWidget {
     required this.red,
     required this.dark,
     required this.medium,
+    this.matchedDuration,
   });
 
   @override
   Widget build(BuildContext context) {
-    final assigned = assignment.distance ?? 0.0;
-    final Color accent = completed ? green : blue;
-    final Color progressColor = pct >= 100
-        ? green
-        : pct >= 60
-        ? orange
-        : red;
+    final assigned      = assignment.distance ?? 0.0;
+    final Color accent  = completed ? green : blue;
+    final Color progressColor =
+    pct >= 100 ? green : pct >= 60 ? orange : red;
 
-    final date = DateTime.tryParse(assignment.scheduledDate ?? '');
-    final dateStr = date != null ? DateFormat('EEE, MMM d, yyyy').format(date) : '—';
+    final date    = DateTime.tryParse(assignment.scheduledDate ?? '');
+    final dateStr = date != null
+        ? DateFormat('EEE, MMM d, yyyy').format(date)
+        : '—';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -969,16 +1212,13 @@ class _AssignmentCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Top Row
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Left: type + date + stats
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Workout type + status badge
                       Row(
                         children: [
                           Expanded(
@@ -990,13 +1230,12 @@ class _AssignmentCard extends StatelessWidget {
                                   color: dark),
                             ),
                           ),
-                          _StatusBadge(
-                              label: completed ? 'Completed' : 'Scheduled',
-                              color: accent),
+                          // _StatusBadge(
+                          //     label: completed ? 'Completed' : 'Scheduled',
+                          //     color: accent),
                         ],
                       ),
                       const SizedBox(height: 6),
-                      // Date
                       Row(
                         children: [
                           Icon(Icons.calendar_today_outlined,
@@ -1008,7 +1247,6 @@ class _AssignmentCard extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      // Distance + Duration
                       Wrap(
                         spacing: 14,
                         children: [
@@ -1037,12 +1275,44 @@ class _AssignmentCard extends StatelessWidget {
                                         fontSize: 12, color: medium)),
                               ],
                             ),
+                          Builder(builder: (_) {
+                            final assignedPace = _formatPace(
+                                assignment.distance, assignment.duration);
+                            final loggedPace = (completed && matched > 0)
+                                ? _formatPace(matched,
+                                matchedDuration ?? assignment.duration)
+                                : null;
+                            if (assignedPace == null && loggedPace == null) {
+                              return const SizedBox.shrink();
+                            }
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.speed_outlined,
+                                    size: 13, color: medium),
+                                const SizedBox(width: 3),
+                                if (assignedPace != null)
+                                  Text(assignedPace,
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 12, color: medium)),
+                                if (assignedPace != null && loggedPace != null)
+                                  Text(' → ',
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 12, color: medium)),
+                                if (loggedPace != null)
+                                  Text(loggedPace,
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 12,
+                                          color: green,
+                                          fontWeight: FontWeight.w600)),
+                              ],
+                            );
+                          }),
                         ],
                       ),
                     ],
                   ),
                 ),
-                // Right: pct
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -1059,8 +1329,6 @@ class _AssignmentCard extends StatelessWidget {
                 ),
               ],
             ),
-
-            // ── Instructions
             if (assignment.instructions != null &&
                 assignment.instructions!.isNotEmpty) ...[
               const SizedBox(height: 8),
@@ -1068,36 +1336,33 @@ class _AssignmentCard extends StatelessWidget {
                   style:
                   GoogleFonts.poppins(fontSize: 12, color: medium)),
             ],
-
-            // ── Progress bar
             const SizedBox(height: 12),
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: LinearProgressIndicator(
-                value: (pct / 100).clamp(0.0, 1.0),
-                minHeight: 6,
+                value:           (pct / 100).clamp(0.0, 1.0),
+                minHeight:       6,
                 backgroundColor: Colors.grey.shade100,
                 valueColor: AlwaysStoppedAnimation<Color>(progressColor),
               ),
             ),
-
-            // ── Action buttons
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                _ActionButton(
-                  label: 'View Details',
-                  onTap: onView,
-                  color: Colors.grey.shade100,
-                  textColor: dark,
-                ),
+                if (!completed)
+                  _ActionButton(
+                    label:     'View Details',
+                    onTap:     onView,
+                    color:     Colors.grey.shade100,
+                    textColor: dark,
+                  ),
                 if (deletable) ...[
                   const SizedBox(width: 8),
                   _ActionButton(
-                    label: 'Delete',
-                    onTap: onDelete,
-                    color: red.withOpacity(0.1),
+                    label:     'Delete',
+                    onTap:     onDelete,
+                    color:     red.withOpacity(0.1),
                     textColor: red,
                   ),
                 ],
@@ -1125,7 +1390,9 @@ class _StatusBadge extends StatelessWidget {
       ),
       child: Text(label,
           style: GoogleFonts.poppins(
-              fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -1147,8 +1414,8 @@ class _ActionButton extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration:
-        BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(
+            color: color, borderRadius: BorderRadius.circular(8)),
         child: Text(label,
             style: GoogleFonts.poppins(
                 fontSize: 12,
@@ -1159,7 +1426,7 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
-// ─── Workout Detail Dialog ─────────────────────────────────────────────────────
+// ─── Workout Detail Dialog ────────────────────────────────────────────────────
 
 class _WorkoutDetailDialog extends StatefulWidget {
   final Assignment assignment;
@@ -1199,9 +1466,8 @@ class _WorkoutDetailDialogState extends State<_WorkoutDetailDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final date = DateTime.tryParse(widget.assignment.scheduledDate ?? '');
-    final dateStr =
-    date != null ? DateFormat('MMM d, yyyy').format(date) : '—';
+    final date    = DateTime.tryParse(widget.assignment.scheduledDate ?? '');
+    final dateStr = date != null ? DateFormat('MMM d, yyyy').format(date) : '—';
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1216,14 +1482,17 @@ class _WorkoutDetailDialogState extends State<_WorkoutDetailDialog> {
               Row(
                 children: [
                   Expanded(
-                    child: Text('Workout — $dateStr',
-                        style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                            color: widget.dark)),
+                    child: Text(
+                      'Workout — $dateStr',
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          color: widget.dark),
+                    ),
                   ),
                   IconButton(
-                    icon: Icon(_editing ? Icons.close : Icons.edit,
+                    icon: Icon(
+                        _editing ? Icons.close : Icons.edit,
                         color: widget.blue),
                     onPressed: () => setState(() => _editing = !_editing),
                   ),
@@ -1248,7 +1517,8 @@ class _WorkoutDetailDialogState extends State<_WorkoutDetailDialog> {
                     onPressed: widget.onSave,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: widget.blue,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding:
+                      const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
                     ),
@@ -1264,7 +1534,8 @@ class _WorkoutDetailDialogState extends State<_WorkoutDetailDialog> {
                   child: OutlinedButton(
                     onPressed: () => Navigator.pop(context),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding:
+                      const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
                     ),
@@ -1280,10 +1551,13 @@ class _WorkoutDetailDialogState extends State<_WorkoutDetailDialog> {
     );
   }
 
-  Widget _dialogField(String label, TextEditingController ctrl,
-      {bool readOnly = false,
+  Widget _dialogField(
+      String label,
+      TextEditingController ctrl, {
+        bool readOnly = false,
         TextInputType keyboardType = TextInputType.text,
-        int maxLines = 1}) {
+        int maxLines = 1,
+      }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -1296,21 +1570,21 @@ class _WorkoutDetailDialogState extends State<_WorkoutDetailDialog> {
                   color: const Color(0xFF7F8C8D))),
           const SizedBox(height: 4),
           TextField(
-            controller: ctrl,
-            readOnly: readOnly,
-            keyboardType: keyboardType,
-            maxLines: maxLines,
+            controller:    ctrl,
+            readOnly:      readOnly,
+            keyboardType:  keyboardType,
+            maxLines:      maxLines,
             decoration: InputDecoration(
-              filled: true,
-              fillColor: readOnly
-                  ? Colors.grey.shade50
-                  : Colors.white,
+              filled:    true,
+              fillColor: readOnly ? Colors.grey.shade50 : Colors.white,
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey.shade300)),
+                  borderSide:
+                  BorderSide(color: Colors.grey.shade300)),
               enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey.shade300)),
+                  borderSide:
+                  BorderSide(color: Colors.grey.shade300)),
               focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide:
@@ -1325,26 +1599,23 @@ class _WorkoutDetailDialogState extends State<_WorkoutDetailDialog> {
   }
 }
 
-
 // ─── Calendar Tab ─────────────────────────────────────────────────────────────
 
 class _CalendarTab extends StatelessWidget {
   final Athlete athlete;
   final String athleteId;
 
-  const _CalendarTab({
-    required this.athlete,
-    required this.athleteId,
-  });
+  const _CalendarTab({required this.athlete, required this.athleteId});
 
   @override
   Widget build(BuildContext context) {
     return CoachAthleteCalendar(
-      athleteId: athleteId,
+      athleteId:   athleteId,
       athleteName: athlete.name,
     );
   }
 }
+
 // ─── Profile Tab ──────────────────────────────────────────────────────────────
 
 class _ProfileTab extends StatelessWidget {
@@ -1359,14 +1630,14 @@ class _ProfileTab extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _infoSection('Personal', [
-          _row('Email', athlete.email, medium, dark),
-          _row('Role', athlete.role ?? 'Athlete', medium, dark),
-          _row('Date of Birth', athlete.dateOfBirth?.toString() ?? 'N/A', medium, dark),
-          _row('City', athlete.city ?? 'N/A', medium, dark),
+          _row('Email',        athlete.email,                    medium, dark),
+          _row('Role',         athlete.role ?? 'Athlete',        medium, dark),
+          _row('Date of Birth',athlete.dateOfBirth?.toString() ?? 'N/A', medium, dark),
+          _row('City',         athlete.city ?? 'N/A',            medium, dark),
         ]),
         const SizedBox(height: 16),
         _infoSection('Training', [
-          _row('Plan', athlete.plan, medium, dark),
+          _row('Plan',       athlete.plan,       medium, dark),
           _row('Experience', athlete.experience, medium, dark),
         ]),
       ],
@@ -1396,8 +1667,7 @@ class _ProfileTab extends StatelessWidget {
           SizedBox(
             width: 100,
             child: Text(label,
-                style:
-                GoogleFonts.poppins(fontSize: 12, color: medium)),
+                style: GoogleFonts.poppins(fontSize: 12, color: medium)),
           ),
           Expanded(
             child: Text(value,

@@ -4,11 +4,10 @@ import 'package:flutter/material.dart';
 import '../services/athlete_performance_service.dart';
 import '../models/athlete.dart';
 
-// ── Colour constants for white-card context ───────────────────────────────────
-const _kPrimaryText   = Color(0xFF1A1A2E); // near-black
-const _kSecondaryText = Color(0xFF6B7280); // medium grey
-const _kBlueBar       = Color(0xFF2575FC); // Change 3: blue progress bar
-const _kBorderColor   = Color(0xFFE5E7EB); // subtle divider
+const _kPrimaryText   = Color(0xFF1A1A2E);
+const _kSecondaryText = Color(0xFF6B7280);
+const _kBlueBar       = Color(0xFF2575FC);
+const _kBorderColor   = Color(0xFFE5E7EB);
 
 class AthletePerformanceTile extends StatefulWidget {
   final Athlete athlete;
@@ -98,22 +97,19 @@ class _AthletePerformanceTileState extends State<AthletePerformanceTile>
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── Tap target ────────────────────────────────────────────────
             InkWell(
               borderRadius: BorderRadius.circular(12),
               onTap: widget.onTap,
               child: Padding(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // ── Row A: Avatar | Name/email | Badge ────────────────
+                    // Row A: Avatar | Name/email | Badge
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // Avatar — blue background, white initials
                         CircleAvatar(
                           radius: 20,
                           backgroundColor: const Color(0xFF1976D2),
@@ -125,8 +121,6 @@ class _AthletePerformanceTileState extends State<AthletePerformanceTile>
                           ),
                         ),
                         const SizedBox(width: 10),
-
-                        // Name / email — dark text
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -142,23 +136,18 @@ class _AthletePerformanceTileState extends State<AthletePerformanceTile>
                               ),
                               Text(
                                 athlete.email,
-                                style: tt.bodySmall
-                                    ?.copyWith(color: _kSecondaryText),
+                                style: tt.bodySmall?.copyWith(color: _kSecondaryText),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ],
                           ),
                         ),
-
-                        // Badge / spinner / error
                         if (loading)
                           const SizedBox(
-                            width: 18,
-                            height: 18,
+                            width: 18, height: 18,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Color(0xFF1976D2)),
+                                strokeWidth: 2, color: Color(0xFF1976D2)),
                           )
                         else if (hasError)
                           const Icon(Icons.error_outline,
@@ -170,8 +159,7 @@ class _AthletePerformanceTileState extends State<AthletePerformanceTile>
 
                     const SizedBox(height: 8),
 
-                    // ── Row B: Plan label | Actions ───────────────────────
-                    // Change 3: flat "Plan – X" text, no bubble
+                    // Row B: Plan label | Actions
                     Row(
                       children: [
                         Text(
@@ -182,27 +170,41 @@ class _AthletePerformanceTileState extends State<AthletePerformanceTile>
                           ),
                         ),
                         const Spacer(),
-                        SizedBox(
-                          height: 32,
-                          width: 32,
-                          child: IconButton(
-                            padding: EdgeInsets.zero,
-                            icon: const Icon(Icons.assignment_outlined,
-                                color: Color(0xFF1976D2), size: 18),
-                            tooltip: 'Assign Workout',
-                            onPressed: widget.onAssign,
+                        // ── Assign Workout chip button ──────────────────
+                        GestureDetector(
+                          onTap: widget.onAssign,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1976D2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(Icons.add_task_rounded,
+                                    color: Colors.white, size: 14),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Assign',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        // REPLACE the existing chat icon SizedBox with this:
-                        // Replace the SizedBox wrapping the Stack with this:
+                        const SizedBox(width: 6),
                         GestureDetector(
                           onTap: widget.onMessage,
                           child: Padding(
                             padding: const EdgeInsets.all(4.0),
                             child: SizedBox(
-                              width: 36,
-                              height: 36,
+                              width: 36, height: 36,
                               child: Stack(
                                 clipBehavior: Clip.none,
                                 children: [
@@ -217,8 +219,7 @@ class _AthletePerformanceTileState extends State<AthletePerformanceTile>
                                   ),
                                   if (widget.unreadCount > 0)
                                     Positioned(
-                                      right: -4,
-                                      top: -4,
+                                      right: -4, top: -4,
                                       child: Container(
                                         padding: const EdgeInsets.all(4),
                                         decoration: const BoxDecoration(
@@ -246,7 +247,7 @@ class _AthletePerformanceTileState extends State<AthletePerformanceTile>
 
                     const SizedBox(height: 10),
 
-                    // ── Progress bars ─────────────────────────────────────
+                    // Progress bars
                     if (summary != null) ...[
                       _WeeklyProgressBar(summary: summary),
                       const SizedBox(height: 6),
@@ -255,7 +256,7 @@ class _AthletePerformanceTileState extends State<AthletePerformanceTile>
                       const SizedBox(height: 6),
                     ],
 
-                    // ── Stats chips + Insights toggle ─────────────────────
+                    // Stats chips + Insights toggle
                     if (summary != null && summary.totalAssignments > 0)
                       _StatsAndToggleRow(
                         summary:       summary,
@@ -267,11 +268,11 @@ class _AthletePerformanceTileState extends State<AthletePerformanceTile>
               ),
             ),
 
-            // ── Expandable chart ──────────────────────────────────────────
+            // Expandable weekly table
             SizeTransition(
-              sizeFactor:     _expandAnim,
+              sizeFactor:    _expandAnim,
               axisAlignment: -1,
-              child: summary != null && summary.bars.isNotEmpty
+              child: summary != null
                   ? _PerformanceChart(summary: summary)
                   : const SizedBox.shrink(),
             ),
@@ -282,9 +283,7 @@ class _AthletePerformanceTileState extends State<AthletePerformanceTile>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Weekly progress bar — dark labels, BLUE bars (Change 3)
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Weekly progress bar ───────────────────────────────────────────────────────
 
 class _WeeklyProgressBar extends StatelessWidget {
   final AthletePerformanceSummary summary;
@@ -306,67 +305,67 @@ class _WeeklyProgressBar extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Distance bar — Change 3: solid blue
-        Row(
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value:           distProg,
-                  minHeight:       7,
-                  backgroundColor: const Color(0xFFE5E7EB),
-                  valueColor: const AlwaysStoppedAnimation<Color>(_kBlueBar),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '${summary.weekLoggedKm.toStringAsFixed(1)}/'
-                  '${summary.weekAssignedKm.toStringAsFixed(1)} km',
-              style: const TextStyle(
-                  color:      _kPrimaryText,
-                  fontSize:   11,
-                  fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-
-        // Time bar — Change 3: blue with slight opacity
-        if (summary.weekAssignedMin > 0) ...[
-          const SizedBox(height: 4),
-          Row(
+        Tooltip(
+          message: 'Logged / Assigned Distance\n'
+              '${summary.weekLoggedKm.toStringAsFixed(1)} km / '
+              '${summary.weekAssignedKm.toStringAsFixed(1)} km',
+          triggerMode: TooltipTriggerMode.tap,
+          child: Row(
             children: [
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value:           timeProg,
-                    minHeight:       5,
+                    value:           distProg,
+                    minHeight:       7,
                     backgroundColor: const Color(0xFFE5E7EB),
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                        Color(0xFF6DA4FC)), // lighter blue for time
+                    valueColor: const AlwaysStoppedAnimation<Color>(_kBlueBar),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               Text(
-                '${fmtMin(summary.weekLoggedMin)}/'
-                    '${fmtMin(summary.weekAssignedMin)}',
+                '${summary.weekLoggedKm.toStringAsFixed(1)}/'
+                    '${summary.weekAssignedKm.toStringAsFixed(1)} km',
                 style: const TextStyle(
-                    color:      _kSecondaryText,
-                    fontSize:   10,
-                    fontWeight: FontWeight.w500),
+                    color: _kPrimaryText, fontSize: 11, fontWeight: FontWeight.w600),
               ),
             ],
           ),
-        ],
-
-        const SizedBox(height: 2),
-        Text(
-          'This week',
-          style: const TextStyle(color: _kSecondaryText, fontSize: 10),
         ),
+        if (summary.weekAssignedMin > 0) ...[
+          const SizedBox(height: 4),
+          Tooltip(
+            message: 'Logged / Assigned Time\n'
+                '${fmtMin(summary.weekLoggedMin)} / ${fmtMin(summary.weekAssignedMin)}',
+            triggerMode: TooltipTriggerMode.tap,
+            child: Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value:           timeProg,
+                      minHeight:       5,
+                      backgroundColor: const Color(0xFFE5E7EB),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                          Color(0xFF6DA4FC)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${fmtMin(summary.weekLoggedMin)} / ${fmtMin(summary.weekAssignedMin)}',
+                  style: const TextStyle(
+                      color: _kSecondaryText, fontSize: 10, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 2),
+        const Text('This week',
+            style: TextStyle(color: _kSecondaryText, fontSize: 10)),
       ],
     );
   }
@@ -387,7 +386,6 @@ class _SimplePlanBar extends StatelessWidget {
               value:           athlete.progressPct / 100,
               minHeight:       7,
               backgroundColor: const Color(0xFFE5E7EB),
-              // Change 3: blue bar
               valueColor: const AlwaysStoppedAnimation<Color>(_kBlueBar),
             ),
           ),
@@ -396,18 +394,14 @@ class _SimplePlanBar extends StatelessWidget {
         Text(
           '${athlete.progressPct}%',
           style: const TextStyle(
-              color:      _kPrimaryText,
-              fontSize:   11,
-              fontWeight: FontWeight.w600),
+              color: _kPrimaryText, fontSize: 11, fontWeight: FontWeight.w600),
         ),
       ],
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Stats row + Insights toggle — dark text on white
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Stats row + Insights toggle ───────────────────────────────────────────────
 
 class _StatsAndToggleRow extends StatelessWidget {
   final AthletePerformanceSummary summary;
@@ -440,28 +434,27 @@ class _StatsAndToggleRow extends StatelessWidget {
           _MiniChip(label: 'Miss', value: '$missed', isAlert: true),
         ],
         const Spacer(),
-        if (summary.bars.isNotEmpty)
-          GestureDetector(
-            onTap: onToggle,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  chartExpanded ? 'Hide' : 'Insights',
-                  style: const TextStyle(
-                      fontSize:   11,
-                      color:      Color(0xFF1976D2),
-                      fontWeight: FontWeight.w700),
-                ),
-                AnimatedRotation(
-                  turns:    chartExpanded ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 250),
-                  child: const Icon(Icons.expand_more,
-                      size: 16, color: Color(0xFF1976D2)),
-                ),
-              ],
-            ),
+        GestureDetector(
+          onTap: onToggle,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                chartExpanded ? 'Hide' : 'Insights',
+                style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF1976D2),
+                    fontWeight: FontWeight.w700),
+              ),
+              AnimatedRotation(
+                turns:    chartExpanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 250),
+                child: const Icon(Icons.expand_more,
+                    size: 16, color: Color(0xFF1976D2)),
+              ),
+            ],
           ),
+        ),
       ],
     );
   }
@@ -482,9 +475,7 @@ class _MiniChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: isAlert
-            ? const Color(0xFFFFEBEB)
-            : const Color(0xFFF3F4F6),
+        color: isAlert ? const Color(0xFFFFEBEB) : const Color(0xFFF3F4F6),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
           color: isAlert
@@ -498,10 +489,10 @@ class _MiniChip extends StatelessWidget {
           style: const TextStyle(fontSize: 10),
           children: [
             TextSpan(
-                text:  '$label ',
+                text: '$label ',
                 style: const TextStyle(color: _kSecondaryText)),
             TextSpan(
-                text:  value,
+                text: value,
                 style: TextStyle(
                     color: isAlert
                         ? const Color(0xFFE53935)
@@ -514,9 +505,7 @@ class _MiniChip extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Performance badge
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Performance badge ─────────────────────────────────────────────────────────
 
 class _PerformanceBadge extends StatelessWidget {
   final AthletePerformanceSummary summary;
@@ -530,26 +519,26 @@ class _PerformanceBadge extends StatelessWidget {
 
     switch (summary.level) {
       case PerformanceLevel.excellent:
-        bg    = const Color(0xFFE8F5E9);
-        fg    = const Color(0xFF2E7D32);
+        bg = const Color(0xFFE8F5E9);
+        fg = const Color(0xFF2E7D32);
         label = 'Peak Performance';
         icon  = Icons.trending_up_rounded;
         break;
       case PerformanceLevel.good:
-        bg    = const Color(0xFFFFF3E0);
-        fg    = const Color(0xFFE65100);
+        bg = const Color(0xFFFFF3E0);
+        fg = const Color(0xFFE65100);
         label = 'On Track';
         icon  = Icons.remove_rounded;
         break;
       case PerformanceLevel.needsAttention:
-        bg    = const Color(0xFFFFEBEE);
-        fg    = const Color(0xFFC62828);
+        bg = const Color(0xFFFFEBEE);
+        fg = const Color(0xFFC62828);
         label = 'Needs Focus';
         icon  = Icons.trending_down_rounded;
         break;
       case PerformanceLevel.noData:
-        bg    = const Color(0xFFF3F4F6);
-        fg    = _kSecondaryText;
+        bg = const Color(0xFFF3F4F6);
+        fg = _kSecondaryText;
         label = 'No Data';
         icon  = Icons.hourglass_empty_rounded;
         break;
@@ -558,7 +547,7 @@ class _PerformanceBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color:        bg,
+        color: bg,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -566,48 +555,58 @@ class _PerformanceBadge extends StatelessWidget {
         children: [
           Icon(icon, color: fg, size: 12),
           const SizedBox(width: 3),
-          Text(
-            label,
-            style: TextStyle(
-                fontSize:   11,
-                color:      fg,
-                fontWeight: FontWeight.w700),
-          ),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 11, color: fg, fontWeight: FontWeight.w700)),
         ],
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Performance chart — already white, kept as-is
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Performance chart — Weekly Table View ─────────────────────────────────────
 
 class _PerformanceChart extends StatelessWidget {
   final AthletePerformanceSummary summary;
   const _PerformanceChart({required this.summary});
 
-  static const Color _assignedColor = Color(0xFF1E88E5);
-  static const Color _goodColor     = Color(0xFF43A047);
-  // static const Color _okColor       = Color(0xFFFFB300);
-  // static const Color _badColor      = Color(0xFFE53935);
-  static const Color _timeColor     = Color(0xFF8E24AA);
-
-  Color _actualColor(double pct) {
-    if (pct >= 90) return _goodColor;
-    if (pct >= 50) return _goodColor;
-    return _goodColor;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final tt      = Theme.of(context).textTheme;
-    final bars    = summary.bars;
-    final hasTime = bars.any((b) => b.assignedMin > 0);
+    final now = DateTime.now();
+    // Monday of the current week
+    final weekStart = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
 
-    final maxKm = bars
-        .expand((b) => [b.assignedKm, b.actualKm])
-        .fold<double>(1, (p, v) => v > p ? v : p);
+    // Build one entry per day Mon–Sun
+    final List<_DayRowData> rows = List.generate(7, (i) {
+      final day = weekStart.add(Duration(days: i));
+      final dayKey =
+          '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+      final isToday = day.year == now.year &&
+          day.month == now.month &&
+          day.day == now.day;
+      final isFuture =
+      day.isAfter(DateTime(now.year, now.month, now.day));
+
+      // Find matching PerformanceBar for this day
+      final bar = summary.bars.cast<PerformanceBar?>().firstWhere(
+            (b) {
+          if (b == null) return false;
+          final bd = b.date;
+          final bKey =
+              '${bd.year}-${bd.month.toString().padLeft(2, '0')}-${bd.day.toString().padLeft(2, '0')}';
+          return bKey == dayKey;
+        },
+        orElse: () => null,
+      );
+
+      return _DayRowData(
+        day: day,
+        isToday: isToday,
+        isFuture: isFuture,
+        bar: bar,
+      );
+    });
 
     return Container(
       decoration: BoxDecoration(
@@ -621,19 +620,19 @@ class _PerformanceChart extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header
+          // ── Section header ──────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.only(bottom: 10),
             child: Row(
               children: [
-                const Icon(Icons.bar_chart_rounded,
+                const Icon(Icons.calendar_view_week_rounded,
                     size: 14, color: Color(0xFF1565C0)),
                 const SizedBox(width: 4),
                 Text(
-                  'Insights',
-                  style: tt.labelMedium?.copyWith(
-                    color:       const Color(0xFF1565C0),
-                    fontWeight:  FontWeight.w700,
+                  'Insights – This Week',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: const Color(0xFF1565C0),
+                    fontWeight: FontWeight.w700,
                     letterSpacing: 0.4,
                   ),
                 ),
@@ -641,259 +640,293 @@ class _PerformanceChart extends StatelessWidget {
             ),
           ),
 
-          // Legend
-          Wrap(
-            spacing: 10,
-            children: [
-              _LegendDot(color: _assignedColor, label: 'Assigned km'),
-              _LegendDot(color: _goodColor,     label: 'Logged km'),
-              if (hasTime) _LegendDot(color: _timeColor, label: 'Time %'),
-            ],
-          ),
-          const SizedBox(height: 10),
-
-          // Chart
-          LayoutBuilder(
-            builder: (context, constraints) {
-              const double labelH = 22.0;
-              const double chartH = 100.0;
-
-              return SizedBox(
-                height: chartH + labelH,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: labelH),
-                      child: RotatedBox(
-                        quarterTurns: 3,
-                        child: Text('km',
-                            style: const TextStyle(
-                                fontSize: 9,
-                                color:    Color(0xFF9E9E9E))),
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: bars.map((bar) {
-                          final assignH = maxKm > 0
-                              ? (bar.assignedKm / maxKm) * chartH
-                              : 0.0;
-                          final actualH = maxKm > 0
-                              ? (bar.actualKm / maxKm) * chartH
-                              : 0.0;
-                          final timeH = hasTime && bar.assignedMin > 0
-                              ? (bar.timePct.clamp(0, 100) / 100) * chartH
-                              : 0.0;
-
-                          final actualColor = _actualColor(bar.distancePct);
-                          final dateLabel =
-                              '${bar.date.day}/${bar.date.month}';
-                          final tooltipMsg =
-                              '${bar.workoutType.toUpperCase()}\n'
-                              'Assigned: ${bar.assignedKm.toStringAsFixed(1)} km'
-                              '${bar.assignedMin > 0 ? ' · ${bar.assignedDurationLabel}' : ''}\n'
-                              'Logged:   ${bar.actualKm.toStringAsFixed(1)} km'
-                              '${bar.actualMin > 0 ? ' · ${bar.actualDurationLabel}' : ''}\n'
-                              'Distance: ${bar.distancePct.toStringAsFixed(0)}%'
-                              '${bar.assignedMin > 0 ? '  |  Time: ${bar.timePct.toStringAsFixed(0)}%' : ''}\n'
-                              '${bar.wasLogged ? '' : '⚠ Not logged'}';
-
-                          return Expanded(
-                            child: Padding(
-                              padding:
-                              const EdgeInsets.symmetric(horizontal: 5),
-                              child: Tooltip(
-                                message:     tooltipMsg,
-                                triggerMode: TooltipTriggerMode.tap,
-                                child: Column(
-                                  mainAxisSize:      MainAxisSize.min,
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
-                                    SizedBox(
-                                      height: chartH,
-                                      child: Row(
-                                        crossAxisAlignment:
-                                        CrossAxisAlignment.end,
-                                        children: [
-                                          Expanded(
-                                            child: _Bar(
-                                              height:    assignH,
-                                              color:     _assignedColor,
-                                              maxHeight: chartH,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 1),
-                                          Expanded(
-                                            child: _Bar(
-                                              height: actualH,
-                                              color:  bar.wasLogged
-                                                  ? actualColor
-                                                  : Colors.grey
-                                                  .withOpacity(0.3),
-                                              maxHeight: chartH,
-                                            ),
-                                          ),
-                                          if (hasTime) ...[
-                                            const SizedBox(width: 1),
-                                            Expanded(
-                                              child: _Bar(
-                                                height: timeH,
-                                                color: bar.wasLogged &&
-                                                    bar.assignedMin > 0
-                                                    ? _timeColor
-                                                    .withOpacity(0.75)
-                                                    : Colors.grey
-                                                    .withOpacity(0.2),
-                                                maxHeight: chartH,
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      height: labelH,
-                                      child: Center(
-                                        child: Text(
-                                          dateLabel,
-                                          style: const TextStyle(
-                                            fontSize:   10,
-                                            color:      Color(0xFF424242),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-
+          // ── Column headers ──────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.only(top: 2),
+            padding: const EdgeInsets.only(bottom: 2),
             child: Row(
               children: [
-                const SizedBox(width: 20),
-                Expanded(
-                  child: Text(
-                    'date - day/month',
-                    style: const TextStyle(
-                      fontSize:      9,
-                      color:         Color(0xFF9E9E9E),
-                    ),
-                  ),
+                const SizedBox(width: 9), // left accent space
+                SizedBox(
+                  width: 84,
+                  child: _headerLabel('DAY'),
                 ),
+                Expanded(child: Center(child: _headerLabel('ASSIGNED WORKOUT'))),
+                Expanded(
+                    child: Center(child: _headerLabel('ACTIVITY LOGGED'))),
               ],
             ),
           ),
 
+          const Divider(height: 6, thickness: 0.8, color: Color(0xFFE5E7EB)),
+
+          // ── Day rows ────────────────────────────────────────────────
+          ...rows.map((r) => _DayRowWidget(row: r)),
+
           const SizedBox(height: 4),
           Center(
-            child: Text(
-              'Avg ${summary.avgCompletionPct.toStringAsFixed(0)}% completion '
-                  '· last ${summary.totalAssignments} workout(s) · tap bar for detail',
-              style: const TextStyle(fontSize: 10, color: Color(0xFF757575)),
-              textAlign: TextAlign.center,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.check_circle_rounded,
+                    size: 10, color: Color(0xFF1976D2)),
+                SizedBox(width: 3),
+                Text('Assigned',
+                    style: TextStyle(fontSize: 9, color: Color(0xFF9CA3AF))),
+                SizedBox(width: 10),
+                Icon(Icons.check_circle_rounded,
+                    size: 10, color: Color(0xFF43A047)),
+                SizedBox(width: 3),
+                Text('Logged',
+                    style: TextStyle(fontSize: 9, color: Color(0xFF9CA3AF))),
+                SizedBox(width: 10),
+                Icon(Icons.cancel_outlined,
+                    size: 10, color: Color(0xFFEF9A9A)),
+                SizedBox(width: 3),
+                Text('Missed',
+                    style: TextStyle(fontSize: 9, color: Color(0xFF9CA3AF))),
+              ],
             ),
           ),
         ],
       ),
     );
   }
+
+  static Widget _headerLabel(String text) => Text(
+    text,
+    style: const TextStyle(
+      fontSize: 9,
+      fontWeight: FontWeight.w700,
+      color: Color(0xFF6B7280),
+      letterSpacing: 0.4,
+    ),
+  );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Animated bar
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Day row data holder ───────────────────────────────────────────────────────
 
-class _Bar extends StatefulWidget {
-  final double height;
-  final Color  color;
-  final double maxHeight;
-  const _Bar(
-      {required this.height, required this.color, required this.maxHeight});
+class _DayRowData {
+  final DateTime day;
+  final bool isToday;
+  final bool isFuture;
+  final PerformanceBar? bar;
 
-  @override
-  State<_Bar> createState() => _BarState();
+  const _DayRowData({
+    required this.day,
+    required this.isToday,
+    required this.isFuture,
+    required this.bar,
+  });
+
+  bool get hasAssignment => bar != null;
+  bool get wasLogged     => bar?.wasLogged ?? false;
 }
 
-class _BarState extends State<_Bar> with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double>   _anim;
+// ── Single day row widget ─────────────────────────────────────────────────────
 
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        duration: const Duration(milliseconds: 500), vsync: this);
-    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-    _ctrl.forward();
-  }
+class _DayRowWidget extends StatelessWidget {
+  final _DayRowData row;
+  const _DayRowWidget({required this.row});
 
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
+  static const _dayNames = [
+    'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'
+  ];
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _anim,
-      builder: (_, __) {
-        final h = (widget.height * _anim.value).clamp(0.0, widget.maxHeight);
-        return Align(
-          alignment: Alignment.bottomCenter,
-          child: Container(
-            height: h < 2 ? 2 : h,
-            decoration: BoxDecoration(
-              color:         widget.color,
-              borderRadius:
-              const BorderRadius.vertical(top: Radius.circular(3)),
+    final dayName = _dayNames[row.day.weekday - 1];
+    final dateStr = '${row.day.day}/${row.day.month}';
+    final rowBg   = row.isToday
+        ? const Color(0xFFEBF3FF)
+        : Colors.transparent;
+
+    // ── Assigned cell ─────────────────────────────────────────────────
+    Widget assignedCell;
+    if (row.hasAssignment) {
+      final b          = row.bar!;
+      final typeLabel  = b.workoutType.isNotEmpty
+          ? '${b.workoutType[0].toUpperCase()}${b.workoutType.substring(1)}'
+          : '';
+      final kmStr      = b.assignedKm > 0
+          ? '${b.assignedKm.toStringAsFixed(1)} km'
+          : '';
+      final timeStr    = b.assignedMin > 0
+          ? PerformanceBar.fmtMin(b.assignedMin)
+          : '';
+      final metricLine =
+      [kmStr, timeStr].where((s) => s.isNotEmpty).join(' · ');
+
+      assignedCell = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.check_circle_rounded,
+              size: 18, color: Color(0xFF1976D2)),
+          // if (typeLabel.isNotEmpty)
+          //   Padding(
+          //     padding: const EdgeInsets.only(top: 1),
+          //     child: Text(
+          //       typeLabel,
+          //       style: const TextStyle(
+          //           fontSize: 9,
+          //           color: Color(0xFF1976D2),
+          //           fontWeight: FontWeight.w700),
+          //     ),
+          //   ),
+          if (metricLine.isNotEmpty)
+            Text(
+              metricLine,
+              style: const TextStyle(
+                  fontSize: 9, color: Color(0xFF5B99E8)),
+              textAlign: TextAlign.center,
+            ),
+        ],
+      );
+    } else {
+      assignedCell = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Text('–',
+              style: TextStyle(
+                  fontSize: 16,
+                  color: Color(0xFFD1D5DB),
+                  fontWeight: FontWeight.w600)),
+        ],
+      );
+    }
+
+    // ── Activity logged cell ──────────────────────────────────────────
+    Widget loggedCell;
+    if (!row.hasAssignment) {
+      // No assignment → nothing expected
+      loggedCell = const Text('–',
+          style: TextStyle(
+              fontSize: 16,
+              color: Color(0xFFD1D5DB),
+              fontWeight: FontWeight.w600));
+    } else if (row.isFuture) {
+      // Future assigned day → pending clock
+      loggedCell = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Icon(Icons.access_time_rounded,
+              size: 16, color: Color(0xFFD1D5DB)),
+          Text('Pending',
+              style: TextStyle(fontSize: 9, color: Color(0xFFD1D5DB))),
+        ],
+      );
+    } else if (row.wasLogged) {
+      // Logged ✓
+      final b       = row.bar!;
+      final kmStr   = b.actualKm > 0
+          ? '${b.actualKm.toStringAsFixed(1)} km'
+          : '';
+      final timeStr = b.actualMin > 0
+          ? PerformanceBar.fmtMin(b.actualMin)
+          : '';
+      final detail  =
+      [kmStr, timeStr].where((s) => s.isNotEmpty).join(' · ');
+
+      loggedCell = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.check_circle_rounded,
+              size: 18, color: Color(0xFF43A047)),
+          if (detail.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Text(
+                detail,
+                style: const TextStyle(
+                    fontSize: 9,
+                    color: Color(0xFF43A047),
+                    fontWeight: FontWeight.w600),
+                textAlign: TextAlign.center,
+              ),
+            ),
+        ],
+      );
+    } else if (row.isToday) {
+      // Today, assigned but not yet logged → neutral pending
+      loggedCell = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Icon(Icons.radio_button_unchecked_rounded,
+              size: 18, color: Color(0xFFABB5BE)),
+          Text('Yet to log',
+              style: TextStyle(fontSize: 9, color: Color(0xFFABB5BE))),
+        ],
+      );
+    } else {
+      // Past assigned, not logged → missed
+      loggedCell = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Icon(Icons.cancel_outlined, size: 18, color: Color(0xFFEF9A9A)),
+          Text('Missed',
+              style: TextStyle(fontSize: 9, color: Color(0xFFEF9A9A))),
+        ],
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 2),
+      decoration: BoxDecoration(
+        color: rowBg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Today accent bar
+          if (row.isToday)
+            Container(
+              width: 3,
+              height: 32,
+              margin: const EdgeInsets.only(right: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1976D2),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            )
+          else
+            const SizedBox(width: 9),
+
+          // Day label column (fixed width)
+          SizedBox(
+            width: 84,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  dayName,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: row.isToday
+                        ? FontWeight.w800
+                        : FontWeight.w600,
+                    color: row.isToday
+                        ? const Color(0xFF1976D2)
+                        : _kPrimaryText,
+                  ),
+                ),
+                Text(
+                  dateStr,
+                  style: const TextStyle(
+                      fontSize: 9, color: Color(0xFF9CA3AF)),
+                ),
+              ],
             ),
           ),
-        );
-      },
-    );
-  }
-}
 
-class _LegendDot extends StatelessWidget {
-  final Color  color;
-  final String label;
-  const _LegendDot({required this.color, required this.label});
+          // Assigned column
+          Expanded(child: Center(child: assignedCell)),
 
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width:  9,
-          height: 9,
-          decoration: BoxDecoration(
-              color: color, borderRadius: BorderRadius.circular(2)),
-        ),
-        const SizedBox(width: 4),
-        Text(label,
-            style: TextStyle(
-                fontSize:   10,
-                color:      color,
-                fontWeight: FontWeight.w600)),
-      ],
+          // Logged column
+          Expanded(child: Center(child: loggedCell)),
+        ],
+      ),
     );
   }
 }

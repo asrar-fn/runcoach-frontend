@@ -7,6 +7,7 @@ import 'package:vector_math/vector_math_64.dart' as vector;
 import './sign_in_screen.dart';
 import './register_screen.dart';
 import './membership_selection_screen.dart';
+import '../widgets/app_logo.dart';
 
 // Conceptual providers (replace with actual logic)
 final authProvider = StateNotifierProvider<AuthNotifier, bool>((ref) => AuthNotifier());
@@ -155,24 +156,20 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: const _CustomAppBar(),
       body: Stack(
         children: [
+          // Background gradient
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  Colors.white,
-                  Colors.white,
-                  colorScheme.surface,
-                ],
+                colors: [Colors.white, Colors.white, colorScheme.surface],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 stops: const [0.0, 0.4, 0.8],
               ),
             ),
           ),
+          // Sparkle animation
           Positioned(
             top: screenSize.height * 0.1,
             right: -screenSize.width * 0.2,
@@ -202,17 +199,72 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
               },
             ),
           ),
+          // ✅ Scrollable content with top padding to clear fixed header
           SingleChildScrollView(
             child: Column(
               children: [
-                SizedBox(height: AppBar().preferredSize.height + screenSize.height * 0.04),
+                const SizedBox(height: 70), // ← space for fixed header
                 _buildHeroSection(screenSize, context, textTheme, colorScheme),
                 _buildFeaturesSection(screenSize, textTheme, colorScheme),
                 _buildFooterSection(textTheme, colorScheme),
               ],
             ),
           ),
+          // ✅ FIXED HEADER - always on top, doesn't scroll
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _buildHeader(context),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        width: double.infinity,
+        height: 70,
+        color: Colors.grey.withOpacity(0.85),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // ✅ Fixed width, not Expanded — gives logo room to breathe
+            SizedBox(
+              width: 160,
+              height: 62,
+              child: AppLogo(
+                fit: BoxFit.contain,
+                alignment: Alignment.centerLeft,
+              ),
+            ),
+            // LOG IN button
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [kPrimaryBlue, kAccentOrange]),
+                borderRadius: BorderRadius.circular(25),
+              ),
+              child: ElevatedButton(
+                onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const SignInScreen())),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25)),
+                ),
+                child: Text('LOG IN',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.bold, color: Colors.white)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -242,20 +294,21 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
                   ),
                 ),
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 20),
               Text.rich(
                 TextSpan(
-                  text: 'Conquer Every ',
+                  text: 'Train Smarter ',
                   style: textTheme.displaySmall?.copyWith(
                     fontSize: screenSize.width * 0.10,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w600,
                     color: Color(0xFFFF964F),
                     height: 1.1,
                   ),
                   children: [
                     TextSpan(
-                      text: 'Run.',
+                      text: 'Reach Your Peak',
                       style: TextStyle(color: kPrimaryBlue),
+
                     ),
                   ],
                 ),
@@ -397,44 +450,40 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
       color: Colors.black,
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [kPrimaryBlue, kAccentOrange],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.4),
-                      blurRadius: 10,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: Icon(Icons.directions_run_rounded, color: colorScheme.onPrimary, size: 24),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'PeakForm',
-                style: textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                  letterSpacing: 1.2,
-                  fontSize: 26,
-                ),
-              ),
-            ],
+          // Row(
+          //   mainAxisAlignment: MainAxisAlignment.center,
+          //   children: [
+          //     Image.asset(
+          //       'assets/images/endurepeak_logo.jpeg',
+          //       height: 36,
+          //       width: 36,
+          //       fit: BoxFit.contain,
+          //     ),
+          //     const SizedBox(width: 12),
+          //     Text(
+          //       'endurepeak',
+          //       style: textTheme.headlineSmall?.copyWith(
+          //         fontWeight: FontWeight.w900,
+          //         color: Colors.white,
+          //         letterSpacing: 1.2,
+          //         fontSize: 26,
+          //       ),
+          //     ),
+          //   ],
+          // ),
+          // In _buildFooterSection, replace the Image.asset with:
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return Image.asset(
+                'assets/images/endurepeak_logo.png',
+                width: constraints.maxWidth * 0.6,  // 60% of footer width
+                fit: BoxFit.fitWidth,
+              );
+            },
           ),
           const SizedBox(height: 24),
           Text(
-            'PeakForm empowers every runner to push their limits and achieve greatness. Join our community today!',
+            'endurepeak empowers every runner to push their limits and achieve greatness. Join our community today!',
             textAlign: TextAlign.center,
             style: textTheme.bodyLarge?.copyWith(
               color: Colors.white,
@@ -459,7 +508,7 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
           Divider(color: Colors.white.withOpacity(0.4)),
           const SizedBox(height: 20),
           Text(
-            '© 2026 PeakForm. All rights reserved.',
+            '© 2026 endurepeak. All rights reserved.',
             textAlign: TextAlign.center,
             style: textTheme.bodySmall?.copyWith(
               color: Colors.white70,
@@ -473,89 +522,71 @@ class _LandingScreenState extends ConsumerState<LandingScreen> with TickerProvid
 }
 
 // --- CustomAppBar Widget ---
-class _CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const _CustomAppBar();
-
-  @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight + 10);
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    return AppBar(
-      backgroundColor: Colors.black.withOpacity(0.2),
-      elevation: 0,
-      title: Row(
-        mainAxisAlignment: MainAxisAlignment.start,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [kPrimaryBlue, kAccentOrange],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.white.withOpacity(0.3),
-                  blurRadius: 8,
-                  spreadRadius: 1,
-                ),
-              ],
-            ),
-            child: Icon(Icons.directions_run_rounded, color: colorScheme.onPrimary, size: 20),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            'PeakForm',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: colorScheme.onPrimary,
-              letterSpacing: 1.2,
-              fontSize: 22,
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [kPrimaryBlue, kAccentOrange],
-            ),
-            borderRadius: BorderRadius.circular(25),
-          ),
-          child: ElevatedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SignInScreen()),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.transparent,
-              shadowColor: Colors.transparent,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(25),
-              ),
-            ),
-            child: Text(
-              'LOG IN',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        )
-      ],
-    );
-  }
-}
+// class _CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
+//   const _CustomAppBar();
+//
+//   @override
+//   Size get preferredSize => const Size.fromHeight(70); // ← reduced header height
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return AppBar(
+//       backgroundColor: Colors.black.withOpacity(0.2),
+//       elevation: 0,
+//       toolbarHeight: 70,
+//       automaticallyImplyLeading: false,
+//       flexibleSpace: SafeArea(
+//         child: Padding(
+//           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), // ← small padding
+//           child: Row(
+//             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//             crossAxisAlignment: CrossAxisAlignment.center,
+//             children: [
+//               // Logo fills available height minus padding
+//               Image.asset(
+//                 'assets/images/endurepeak_logo.png',
+//                 height: 54, // ← 70 (toolbar) - 16 (8+8 vertical padding)
+//                 fit: BoxFit.fitHeight,
+//               ),
+//               // LOG IN button
+//               Container(
+//                 decoration: BoxDecoration(
+//                   gradient: LinearGradient(
+//                     colors: [kPrimaryBlue, kAccentOrange],
+//                   ),
+//                   borderRadius: BorderRadius.circular(25),
+//                 ),
+//                 child: ElevatedButton(
+//                   onPressed: () {
+//                     Navigator.push(
+//                       context,
+//                       MaterialPageRoute(builder: (context) => const SignInScreen()),
+//                     );
+//                   },
+//                   style: ElevatedButton.styleFrom(
+//                     backgroundColor: Colors.transparent,
+//                     shadowColor: Colors.transparent,
+//                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+//                     shape: RoundedRectangleBorder(
+//                       borderRadius: BorderRadius.circular(25),
+//                     ),
+//                   ),
+//                   child: Text(
+//                     'LOG IN',
+//                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
+//                       fontWeight: FontWeight.bold,
+//                       color: Colors.white,
+//                     ),
+//                   ),
+//                 ),
+//               ),
+//             ],
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+// }
 
 // --- GradientButton Widget ---
 class _GradientButton extends StatelessWidget {

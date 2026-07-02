@@ -1,12 +1,24 @@
 // lib/screens/athlete_assignments_screen.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../services/assignment_service.dart';
+import '../services/auth_storage_service.dart';
+import '../config/api_config.dart';
 
 class AthleteAssignmentsScreen extends StatefulWidget {
   final String athleteId;
 
-  const AthleteAssignmentsScreen({super.key, required this.athleteId});
+  /// Optionally pass activities from AppState to avoid an extra network call.
+  /// If null, the screen fetches them itself.
+  final List<Map<String, dynamic>>? activities;
+
+  const AthleteAssignmentsScreen({
+    super.key,
+    required this.athleteId,
+    this.activities,
+  });
 
   @override
   State<AthleteAssignmentsScreen> createState() =>
@@ -16,36 +28,84 @@ class AthleteAssignmentsScreen extends StatefulWidget {
 class _AthleteAssignmentsScreenState extends State<AthleteAssignmentsScreen>
     with SingleTickerProviderStateMixin {
   List<Map<String, dynamic>> _assignments = [];
+  // Internal activities list — populated either from widget.activities or fetched
+  List<Map<String, dynamic>> _activities = [];
   bool _isLoading = true;
   String _errorMessage = '';
   late TabController _tabController;
 
-  // Group assignments by status relative to today
+  // ── helpers ────────────────────────────────────────────────────────────────
+
+  bool _isPast(String? dateStr) {
+    if (dateStr == null) return false;
+    final d = DateTime.parse(dateStr).toLocal();
+    final now = DateTime.now();
+    final scheduledLocalDate = DateTime(d.year, d.month, d.day);
+    final todayLocalDate = DateTime(now.year, now.month, now.day);
+
+    // Strictly before today → always past
+    if (scheduledLocalDate.isBefore(todayLocalDate)) return true;
+
+    // Scheduled for TODAY → treat as past only if an activity was already
+    // logged on this day (so the card moves to the Past tab as Completed).
+    if (scheduledLocalDate == todayLocalDate) {
+      return _activityForDate(dateStr) != null;
+    }
+
+    // Future date → upcoming
+    return false;
+  }
+
+  /// Extract the local calendar date (yyyy-MM-dd) from a raw date string.
+  String _localDateKey(String raw) {
+    final d = DateTime.parse(raw).toLocal();
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Returns ALL activities logged on the same LOCAL calendar day as [dateStr].
+  /// Compares local date strings (yyyy-MM-dd) so UTC midnight stored in the DB
+  /// doesn't shift the day when the device is in IST (UTC+5:30).
+  List<Map<String, dynamic>> _activitiesForDate(String? dateStr) {
+    if (dateStr == null) return [];
+    final assignedKey = _localDateKey(dateStr);
+    return _activities.where((act) {
+      final raw = act['date'] ?? act['createdAt'];
+      if (raw == null) return false;
+      return _localDateKey(raw.toString()) == assignedKey;
+    }).toList();
+  }
+
+  // Convenience: returns first match or null (used by _isPast)
+  Map<String, dynamic>? _activityForDate(String? dateStr) {
+    final list = _activitiesForDate(dateStr);
+    return list.isEmpty ? null : list.first;
+  }
+
+  // ── grouped lists ──────────────────────────────────────────────────────────
+
   List<Map<String, dynamic>> get _upcoming => _assignments
       .where((a) => !_isPast(a['scheduledDate']))
       .toList()
-    ..sort((a, b) =>
-        DateTime.parse(a['scheduledDate'])
-            .compareTo(DateTime.parse(b['scheduledDate'])));
+    ..sort((a, b) => DateTime.parse(a['scheduledDate']).toLocal()
+        .compareTo(DateTime.parse(b['scheduledDate']).toLocal()));
 
   List<Map<String, dynamic>> get _past => _assignments
       .where((a) => _isPast(a['scheduledDate']))
       .toList()
-    ..sort((a, b) =>
-        DateTime.parse(b['scheduledDate'])
-            .compareTo(DateTime.parse(a['scheduledDate'])));
+    ..sort((a, b) => DateTime.parse(b['scheduledDate']).toLocal()
+        .compareTo(DateTime.parse(a['scheduledDate']).toLocal()));
 
-  bool _isPast(String? dateStr) {
-    if (dateStr == null) return false;
-    return DateTime.parse(dateStr).isBefore(
-        DateTime.now().subtract(const Duration(hours: 1)));
-  }
+  // ── lifecycle ──────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _fetchAssignments();
+    // Seed with parent-provided activities immediately (avoids flicker)
+    if (widget.activities != null) {
+      _activities = List.from(widget.activities!);
+    }
+    _fetchAll();
   }
 
   @override
@@ -54,25 +114,58 @@ class _AthleteAssignmentsScreenState extends State<AthleteAssignmentsScreen>
     super.dispose();
   }
 
-  Future<void> _fetchAssignments() async {
+  /// Fetches assignments AND activities in parallel so matching always works.
+  Future<void> _fetchAll() async {
     setState(() {
       _isLoading = true;
       _errorMessage = '';
     });
     try {
-      final data =
-      await AssignmentService.getAssignmentsByAthlete(widget.athleteId);
-      setState(() {
-        _assignments = data;
-        _isLoading = false;
-      });
+      // Run both fetches concurrently
+      await Future.wait([
+        _fetchAssignments(),
+        _fetchActivitiesInternal(),
+      ]);
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  Future<void> _fetchAssignments() async {
+    final data =
+    await AssignmentService.getAssignmentsByAthlete(widget.athleteId);
+    if (mounted) setState(() => _assignments = data);
+  }
+
+  /// Fetches the athlete's activities directly from the API.
+  /// Falls back to [widget.activities] if the request fails.
+  Future<void> _fetchActivitiesInternal() async {
+    try {
+      final authData = await AuthStorageService.getAuthData();
+      final token = authData['authToken'];
+      final response = await http.get(
+        Uri.parse(
+            '${ApiConfig.baseUrl}/api/activities/athlete/${widget.athleteId}'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as List;
+        final fetched =
+        data.map((e) => Map<String, dynamic>.from(e)).toList();
+        if (mounted) setState(() => _activities = fetched);
+      }
+    } catch (_) {
+      // Keep whatever was seeded from widget.activities
+    }
+  }
+
+  // ── build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -166,8 +259,19 @@ class _AthleteAssignmentsScreenState extends State<AthleteAssignmentsScreen>
       padding: const EdgeInsets.all(16),
       itemCount: items.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, index) =>
-          _AssignmentCard(assignment: items[index], isPast: !isUpcoming),
+      itemBuilder: (context, index) {
+        final assignment = items[index];
+        final isPast = !isUpcoming;
+        final loggedActivities = isPast
+            ? _activitiesForDate(assignment['scheduledDate'])
+            : <Map<String, dynamic>>[];
+
+        return _AssignmentCard(
+          assignment: assignment,
+          isPast: isPast,
+          loggedActivities: loggedActivities,
+        );
+      },
     );
   }
 
@@ -217,14 +321,24 @@ class _AthleteAssignmentsScreenState extends State<AthleteAssignmentsScreen>
 }
 
 // ── Individual Assignment Card ───────────────────────────────────────────────
+
 class _AssignmentCard extends StatelessWidget {
   final Map<String, dynamic> assignment;
   final bool isPast;
 
+  /// All activities logged on the same day as this assignment.
+  final List<Map<String, dynamic>> loggedActivities;
+
   const _AssignmentCard({
     required this.assignment,
     required this.isPast,
+    this.loggedActivities = const [],
   });
+
+  // ── derived state ──────────────────────────────────────────────────────────
+
+  bool get _isCompleted => isPast && loggedActivities.isNotEmpty;
+  bool get _isMissed => isPast && loggedActivities.isEmpty;
 
   Color _typeColor(String type, ColorScheme cs) {
     switch (type.toLowerCase()) {
@@ -247,6 +361,21 @@ class _AssignmentCard extends StatelessWidget {
     }
   }
 
+  String? _formatPace(double? distanceKm, int? durationMin) {
+    if (distanceKm == null || distanceKm <= 0) return null;
+    if (durationMin == null || durationMin <= 0) return null;
+    final paceDecimal = durationMin / distanceKm;
+    final paceMinutes = paceDecimal.floor();
+    final paceSeconds = ((paceDecimal - paceMinutes) * 60).round();
+    return '$paceMinutes:${paceSeconds.toString().padLeft(2, '0')} /km';
+  }
+
+  /// Parse a value that might be a String or a num.
+  double? _toDouble(dynamic v) =>
+      v == null ? null : double.tryParse(v.toString());
+  int? _toInt(dynamic v) =>
+      v == null ? null : int.tryParse(v.toString());
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -255,12 +384,23 @@ class _AssignmentCard extends StatelessWidget {
     final String workoutType = assignment['workoutType'] ?? 'Workout';
     final String title =
         assignment['title'] ?? assignment['workoutType'] ?? 'Workout';
-    final String distance = assignment['distance'] ?? '';
-    final String duration = assignment['duration'] ?? '';
+    final String distance = assignment['distance']?.toString() ?? '';
+    final String duration = assignment['duration']?.toString() ?? '';
     final String instructions = assignment['instructions'] ?? '';
-    final String targetPace = assignment['targetPace'] ?? '';
+    final String targetPace = _formatPace(
+      _toDouble(assignment['distance']),
+      _toInt(assignment['duration']),
+    ) ??
+        (assignment['targetPace'] ?? '');
     final String? dateStr = assignment['scheduledDate'];
     final typeColor = _typeColor(workoutType, cs);
+
+    // ── status colours ───────────────────────────────────────────────────────
+    final Color statusColor = _isCompleted
+        ? const Color(0xFF2E7D32)
+        : _isMissed
+        ? const Color(0xFFC62828)
+        : typeColor;
 
     String formattedDate = '';
     if (dateStr != null) {
@@ -276,9 +416,9 @@ class _AssignmentCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isPast
-              ? cs.onSurface.withOpacity(0.08)
+              ? statusColor.withOpacity(0.3)
               : typeColor.withOpacity(0.25),
-          width: 1.2,
+          width: 1.4,
         ),
         boxShadow: [
           BoxShadow(
@@ -289,14 +429,15 @@ class _AssignmentCard extends StatelessWidget {
         ],
       ),
       child: Opacity(
-        opacity: isPast ? 0.65 : 1.0,
+        opacity: _isMissed ? 0.75 : 1.0,
         child: Column(
           children: [
-            // ── Color stripe + header ──────────────────────────────────
+            // ── Header ──────────────────────────────────────────────────────
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: typeColor.withOpacity(0.08),
+                color: statusColor.withOpacity(0.08),
                 borderRadius:
                 const BorderRadius.vertical(top: Radius.circular(16)),
               ),
@@ -306,7 +447,7 @@ class _AssignmentCard extends StatelessWidget {
                     width: 4,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: typeColor,
+                      color: statusColor,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -324,11 +465,14 @@ class _AssignmentCard extends StatelessWidget {
                         ),
                         Text(
                           workoutType,
-                          style: tt.bodySmall?.copyWith(color: typeColor),
+                          style:
+                          tt.bodySmall?.copyWith(color: typeColor),
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  // Date pill
                   if (formattedDate.isNotEmpty)
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -345,42 +489,178 @@ class _AssignmentCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                  // Status badge (completed / missed) — only for past
+                  if (isPast) ...[
+                    const SizedBox(width: 6),
+                    _StatusBadge(
+                      isCompleted: _isCompleted,
+                      color: statusColor,
+                    ),
+                  ],
                 ],
               ),
             ),
 
-            // ── Stats row ─────────────────────────────────────────────
+            // ── Assigned stats row ───────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (distance.isNotEmpty) ...[
-                    _StatChip(
-                      icon: Icons.straighten,
-                      label: '$distance km',
-                      color: cs.primary,
+                  // Label
+                  if (isPast)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        'Assigned',
+                        style: tt.labelSmall?.copyWith(
+                          color: cs.onSurface.withOpacity(0.45),
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
                     ),
-                    const SizedBox(width: 8),
-                  ],
-                  if (duration.isNotEmpty) ...[
-                    _StatChip(
-                      icon: Icons.timer_outlined,
-                      label: '$duration min',
-                      color: cs.secondary,
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  if (targetPace.isNotEmpty)
-                    _StatChip(
-                      icon: Icons.speed,
-                      label: targetPace,
-                      color: const Color(0xFF6A1B9A),
-                    ),
+                  Row(
+                    children: [
+                      if (distance.isNotEmpty) ...[
+                        _StatChip(
+                          icon: Icons.straighten,
+                          label: '$distance km',
+                          color: cs.primary,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      if (duration.isNotEmpty) ...[
+                        _StatChip(
+                          icon: Icons.timer_outlined,
+                          label: '$duration min',
+                          color: cs.secondary,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      if (targetPace.isNotEmpty)
+                        _StatChip(
+                          icon: Icons.speed,
+                          label: targetPace,
+                          color: const Color(0xFF6A1B9A),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
 
-            // ── Instructions ─────────────────────────────────────────
+            // ── Logged stats (completed only — one row per activity) ─────────
+            if (_isCompleted) ...[
+              Padding(
+                padding: const EdgeInsets.only(left: 16, right: 16, bottom: 4),
+                child: Divider(height: 1, color: cs.onSurface.withOpacity(0.08)),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      loggedActivities.length == 1
+                          ? 'Logged by athlete'
+                          : 'Logged by athlete (${loggedActivities.length} activities)',
+                      style: tt.labelSmall?.copyWith(
+                        color: const Color(0xFF2E7D32),
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // One row per logged activity
+                    ...loggedActivities.asMap().entries.map((entry) {
+                      final i = entry.key;
+                      final act = entry.value;
+                      final double? dist = _toDouble(
+                          act['distanceKm'] ?? act['distance']);
+                      final int? dur = _toInt(
+                          act['durationMin'] ?? act['duration']);
+                      final String? pace = _formatPace(dist, dur);
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (loggedActivities.length > 1)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                'Activity ${i + 1}',
+                                style: tt.labelSmall?.copyWith(
+                                  color: cs.onSurface.withOpacity(0.45),
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
+                          Row(
+                            children: [
+                              if (dist != null) ...[
+                                _StatChip(
+                                  icon: Icons.straighten,
+                                  label: '${dist.toStringAsFixed(2)} km',
+                                  color: const Color(0xFF2E7D32),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              if (dur != null) ...[
+                                _StatChip(
+                                  icon: Icons.timer_outlined,
+                                  label: '$dur min',
+                                  color: const Color(0xFF2E7D32),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              if (pace != null)
+                                _StatChip(
+                                  icon: Icons.speed,
+                                  label: pace,
+                                  color: const Color(0xFF2E7D32),
+                                ),
+                            ],
+                          ),
+                          if (i < loggedActivities.length - 1)
+                            const SizedBox(height: 8),
+                        ],
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ],
+
+            // ── Missed banner ────────────────────────────────────────────────
+            if (_isMissed)
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFC62828).withOpacity(0.07),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: const Color(0xFFC62828).withOpacity(0.25)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.cancel_outlined,
+                        size: 16, color: Color(0xFFC62828)),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Workout missed — no activity logged on this day',
+                      style: tt.bodySmall?.copyWith(
+                        color: const Color(0xFFC62828),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // ── Instructions ─────────────────────────────────────────────────
             if (instructions.isNotEmpty)
               Padding(
                 padding:
@@ -418,6 +698,48 @@ class _AssignmentCard extends StatelessWidget {
     );
   }
 }
+
+// ── Status badge widget ──────────────────────────────────────────────────────
+
+class _StatusBadge extends StatelessWidget {
+  final bool isCompleted;
+  final Color color;
+
+  const _StatusBadge({required this.isCompleted, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isCompleted ? Icons.check_circle_outline : Icons.cancel_outlined,
+            size: 12,
+            color: color,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            isCompleted ? 'Completed' : 'Missed',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Stat chip ────────────────────────────────────────────────────────────────
 
 class _StatChip extends StatelessWidget {
   final IconData icon;

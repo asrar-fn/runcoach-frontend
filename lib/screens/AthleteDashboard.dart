@@ -22,6 +22,11 @@
     import './strava_page.dart';
     import '../widgets/unified_ai_analysis_card.dart';
     import '../config/api_config.dart'; // adjust path as needed
+    import './landing_screen.dart';
+    import '../widgets/collapsible_section.dart';
+    import '../widgets/dashboard_section_content.dart';
+    import 'package:cloud_firestore/cloud_firestore.dart';
+    import '../widgets/app_logo.dart';
 
     // --- Data Models (equivalent to your API response types) ---
     class Me {
@@ -157,7 +162,7 @@
       if (v == null) return null;
       if (v is String) {
         final d = DateTime.tryParse(v);
-        return d;
+        return d?.toLocal();   // ← convert UTC → device local time
       }
       return null;
     }
@@ -215,11 +220,19 @@
 
       Map<String, dynamic> _meJson = {};
       Map<String, dynamic> get meJson => _meJson;
+      String _paymentStatus = ''; // 'pending_review' | 'approved' | 'rejected' | ''
+      String _rejectionReason = '';
+      String _pendingPlanName = '';
+
+      String get paymentStatus => _paymentStatus;
+      String get rejectionReason => _rejectionReason;
+      String get pendingPlanName => _pendingPlanName;
 
       AppState() {
         _fetchMe();
         _fetchDailyGoals();
         checkStravaStatus();
+        _listenToPaymentStatus();
       }
 
       Future<void> _fetchMe() async {
@@ -326,6 +339,99 @@
         notifyListeners();
       }
 
+      void _listenToPaymentStatus() async {
+        final authData = await AuthStorageService.getAuthData();
+        final userId = authData['userId'] ?? '';
+        if (userId.isEmpty) return;
+
+        FirebaseFirestore.instance
+            .collection('payment_receipts')
+            .where('userId', isEqualTo: userId)
+            .orderBy('uploadedAt', descending: true)
+            .limit(1)
+            .snapshots()
+            .listen((snap) {
+          if (snap.docs.isEmpty) {
+            _paymentStatus = '';
+            _rejectionReason = '';
+            _pendingPlanName = '';
+          } else {
+            final data = snap.docs.first.data();
+            final status = data['status'] ?? '';
+            // Only surface pending/rejected — ignore approved (plan is already active)
+            if (status == 'pending_review' || status == 'rejected') {
+              _paymentStatus = status;
+              _rejectionReason = data['rejectionReason'] ?? '';
+              _pendingPlanName = data['planName'] ?? '';
+            } else {
+              _paymentStatus = '';
+              _rejectionReason = '';
+              _pendingPlanName = '';
+            }
+          }
+          notifyListeners();
+        });
+      }
+
+      Future<bool> updateActivity(String activityId, double distance, int duration, DateTime date) async {
+        try {
+          final authData = await AuthStorageService.getAuthData();
+          final token = authData['authToken'];
+
+          final response = await http.put(
+            Uri.parse('${ApiConfig.baseUrl}/api/activities/$activityId'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({
+              "distanceKm": distance,
+              "durationMin": duration,
+              "date": date.toIso8601String(),
+            }),
+          );
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final idx = _activities.indexWhere((a) => a.id == activityId);
+            if (idx != -1) {
+              _activities[idx] = Activity.fromJson(data);
+              notifyListeners();
+            }
+            return true;
+          }
+          return false;
+        } catch (e) {
+          print("Update activity error: $e");
+          return false;
+        }
+      }
+
+      // Change signature to accept nullable
+      Future<bool> deleteActivity(String? activityId) async {
+        if (activityId == null || activityId.isEmpty) return false; // ✅ guard
+
+        try {
+          final authData = await AuthStorageService.getAuthData();
+          final token = authData['authToken'];
+
+          final response = await http.delete(
+            Uri.parse('${ApiConfig.baseUrl}/api/activities/$activityId'),
+            headers: {'Authorization': 'Bearer $token'},
+          );
+
+          if (response.statusCode == 200) {
+            _activities.removeWhere((a) => a.id == activityId);
+            notifyListeners();
+            return true;
+          }
+          return false;
+        } catch (e) {
+          print("Delete activity error: $e");
+          return false;
+        }
+      }
+
       Future<void> uploadActivity(double distance, int duration, DateTime date) async {
         _isUploadingActivity = true;
         notifyListeners();
@@ -344,6 +450,7 @@
               "distanceKm": distance,
               "durationMin": duration,
               "date": date.toIso8601String(),
+              "createdAt": date.toIso8601String(),
               "type": "run"
             }),
           );
@@ -534,9 +641,10 @@
     String fmtKm(double n) => "${n.toStringAsFixed(2)} km";
 
     int pct(double actual, double assigned) {
-      if (assigned <= 0) { // Handle division by zero if no assignment
-        return actual > 0 ? 100 : 0; // If activities exist but no assignment, consider it 100% "of something"
+      if (assigned <= 0) {
+        return 0;
       }
+
       return ((actual / assigned) * 100).round();
     }
 
@@ -600,11 +708,15 @@
       TextEditingController _timeInputController = TextEditingController();
       DateTime? _selectedDate;
       bool _runTour = false;
+      bool _prefsReady = false;
 
       @override
       void initState() {
         super.initState();
         _selectedDate = DateTime.now();
+        DashboardSectionPrefs.instance.load().then((_) {
+          if (mounted) setState(() => _prefsReady = true);
+        });
         WidgetsBinding.instance.addPostFrameCallback((_) {
           final appState = Provider.of<AppState>(context, listen: false);
           if (appState.isFirstVisit == true) {
@@ -618,6 +730,7 @@
           }
         });
       }
+
 
       @override
       void dispose() {
@@ -659,6 +772,49 @@
       }
 
       void _navigateToUpgradeFlow(BuildContext context) async {
+        final appState = Provider.of<AppState>(context, listen: false);
+
+        // Block if already under review
+        if (appState.paymentStatus == 'pending_review') {
+          showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  const Icon(Icons.hourglass_top_rounded,
+                      color: Color(0xFFF59E0B)),
+                  const SizedBox(width: 8),
+                  Text('Review Pending',
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w700, fontSize: 16)),
+                ],
+              ),
+              content: Text(
+                'Your payment receipt for ${appState.pendingPlanName} is currently under review. '
+                    'Please wait for our team to verify it before submitting another payment.',
+                style: GoogleFonts.inter(fontSize: 14, height: 1.5),
+              ),
+              actions: [
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF59E0B),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
+                  ),
+                  child: Text('OK',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          );
+          return; // ← stops navigation
+        }
+
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => const MembershipSelectionScreen(),
@@ -666,7 +822,6 @@
         );
 
         if (context.mounted) {
-          // Force a fresh fetch so the dashboard shows the new plan immediately
           await Provider.of<AppState>(context, listen: false).refreshAll();
         }
       }
@@ -828,6 +983,16 @@
         final appState = Provider.of<AppState>(context, listen: false);
         bool distanceError = false;
         bool durationError = false;
+        TimeOfDay? _selectedTime;
+        _selectedTime = TimeOfDay.now();
+
+        bool isPastDate(DateTime date) {
+          final now = DateTime.now();
+
+          return date.year != now.year ||
+              date.month != now.month ||
+              date.day != now.day;
+        }
 
         showDialog(
           context: context,
@@ -848,7 +1013,7 @@
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text("Manual Upload",
+                              Text("Manual Activity",
                                 style: GoogleFonts.poppins(
                                   fontSize: 20, fontWeight: FontWeight.w600,
                                   color: AppColors.textDark,
@@ -962,6 +1127,56 @@
                             ),
                           ),
                           const SizedBox(height: 24),
+                          if (_selectedDate != null &&
+                              isPastDate(_selectedDate!)) ...[
+                            const SizedBox(height: 20),
+
+                            Text(
+                              "Time of Activity",
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.textDark,
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            InkWell(
+                              onTap: () async {
+                                final picked = await showTimePicker(
+                                  context: dialogContext,
+                                  initialTime: _selectedTime ?? TimeOfDay.now(),
+                                );
+
+                                if (picked != null) {
+                                  setDialogState(() {
+                                    _selectedTime = picked;
+                                  });
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey.shade300),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      _selectedTime?.format(context) ?? "Select Time",
+                                    ),
+                                    const Icon(Icons.access_time),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
                           Text("Date of Activity",
                             style: GoogleFonts.poppins(fontSize: 14,
                                 fontWeight: FontWeight.w500, color: AppColors.textDark),
@@ -1021,10 +1236,26 @@
                                       return;
                                     }
 
+                                    DateTime activityDate;
+
+                                    if (_selectedDate != null &&
+                                        isPastDate(_selectedDate!)) {
+
+                                      activityDate = DateTime(
+                                        _selectedDate!.year,
+                                        _selectedDate!.month,
+                                        _selectedDate!.day,
+                                        _selectedTime?.hour ?? 0,
+                                        _selectedTime?.minute ?? 0,
+                                      );
+                                    } else {
+                                      activityDate = DateTime.now();
+                                    }
+
                                     appState.uploadActivity(
                                       distance,
                                       duration,
-                                      _selectedDate ?? DateTime.now(),
+                                      activityDate,
                                     ).then((_) {
                                       _distanceInputController.clear();
                                       _timeInputController.clear();
@@ -1047,6 +1278,44 @@
               },
             );
           },
+        );
+      }
+
+      Future<void> _logout(BuildContext context) async {
+        final shouldLogout = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Logout',
+                style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textDark)),
+            content: const Text('Are you sure you want to logout?',
+                style: TextStyle(color: AppColors.textMedium)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel', style: TextStyle(color: AppColors.textMedium)),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accentRed,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 0,
+                ),
+                child: const Text('Logout', style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        );
+
+        if (shouldLogout != true) return;
+        await AuthStorageService.clearAuthData();
+        if (!context.mounted) return;
+
+        Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LandingScreen()),
+              (route) => false,
         );
       }
 
@@ -1166,208 +1435,6 @@
           );
         }
 
-        // Upload Activity Dialog Trigger
-        // Upload Activity Dialog Trigger
-        // if (_showUploadForm) {
-        //   WidgetsBinding.instance.addPostFrameCallback((_) {
-        //     showDialog(
-        //       context: context,
-        //       barrierDismissible: false,
-        //       builder: (BuildContext dialogContext) {
-        //         // Use StatefulBuilder to update Pace in real-time
-        //         return StatefulBuilder(
-        //             builder: (context, setDialogState) {
-        //               return Dialog(
-        //                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        //                 child: Container(
-        //                   constraints: const BoxConstraints(maxWidth: 450),
-        //                   padding: const EdgeInsets.all(24.0),
-        //                   child: SingleChildScrollView(
-        //                     child: Column(
-        //                       mainAxisSize: MainAxisSize.min,
-        //                       crossAxisAlignment: CrossAxisAlignment.start,
-        //                       children: [
-        //                         Row(
-        //                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        //                           children: [
-        //                             Text(
-        //                               "Manual Upload",
-        //                               style: GoogleFonts.poppins(
-        //                                 fontSize: 20,
-        //                                 fontWeight: FontWeight.w600, // Semi-bold, not heavy bold
-        //                                 color: AppColors.textDark,
-        //                               ),
-        //                             ),
-        //                             IconButton(
-        //                               icon: const Icon(Icons.close, color: AppColors.textMedium),
-        //                               onPressed: () {
-        //                                 setState(() => _showUploadForm = false);
-        //                                 Navigator.of(dialogContext).pop();
-        //                               },
-        //                             ),
-        //                           ],
-        //                         ),
-        //                         const SizedBox(height: 8),
-        //                         Text(
-        //                           _selectedDate != null ? DateFormat('EEEE, MMM d, yyyy').format(_selectedDate!) : "",
-        //                           style: GoogleFonts.poppins(color: AppColors.textMedium, fontSize: 13),
-        //                         ),
-        //                         const Divider(height: 32),
-        //
-        //                         // Input Row: Distance & Duration
-        //                         Row(
-        //                           children: [
-        //                             Expanded(
-        //                               child: _buildInputField(
-        //                                 label: "Distance (km)",
-        //                                 controller: _distanceInputController,
-        //                                 hint: "0.0",
-        //                                 onChanged: (val) => setDialogState(() {}),
-        //                               ),
-        //                             ),
-        //                             const SizedBox(width: 16),
-        //                             Expanded(
-        //                               child: _buildInputField(
-        //                                 label: "Duration (min)",
-        //                                 controller: _timeInputController,
-        //                                 hint: "0",
-        //                                 onChanged: (val) => setDialogState(() {}),
-        //                               ),
-        //                             ),
-        //                           ],
-        //                         ),
-        //
-        //                         const SizedBox(height: 24),
-        //
-        //                         // CALCULATED PACE BOX
-        //                         Container(
-        //                           width: double.infinity,
-        //                           padding: const EdgeInsets.all(16),
-        //                           decoration: BoxDecoration(
-        //                             color: AppColors.primaryBlue.withOpacity(0.05),
-        //                             borderRadius: BorderRadius.circular(12),
-        //                             border: Border.all(color: AppColors.primaryBlue.withOpacity(0.1)),
-        //                           ),
-        //                           child: Row(
-        //                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        //                             children: [
-        //                               Text(
-        //                                 "Calculated Pace:",
-        //                                 style: GoogleFonts.poppins(
-        //                                   color: AppColors.textMedium,
-        //                                   fontSize: 14,
-        //                                   fontWeight: FontWeight.w500,
-        //                                 ),
-        //                               ),
-        //                               Text(
-        //                                 _calculatePace(_distanceInputController.text, _timeInputController.text),
-        //                                 style: GoogleFonts.poppins(
-        //                                   color: AppColors.primaryBlue,
-        //                                   fontSize: 18,
-        //                                   fontWeight: FontWeight.w600,
-        //                                 ),
-        //                               ),
-        //                             ],
-        //                           ),
-        //                         ),
-        //
-        //                         const SizedBox(height: 24),
-        //
-        //                         // Date Selector Button
-        //                         Text(
-        //                           "Date of Activity",
-        //                           style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textDark),
-        //                         ),
-        //                         const SizedBox(height: 8),
-        //                         InkWell(
-        //                           onTap: () async {
-        //                             final DateTime? picked = await showDatePicker(
-        //                               context: dialogContext,
-        //                               initialDate: _selectedDate ?? DateTime.now(),
-        //                               firstDate: DateTime(2000),
-        //                               lastDate: DateTime.now(),
-        //                             );
-        //                             if (picked != null) {
-        //                               setDialogState(() => _selectedDate = picked);
-        //                             }
-        //                           },
-        //                           child: Container(
-        //                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        //                             decoration: BoxDecoration(
-        //                               border: Border.all(color: Colors.grey.shade300),
-        //                               borderRadius: BorderRadius.circular(12),
-        //                             ),
-        //                             child: Row(
-        //                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        //                               children: [
-        //                                 Text(
-        //                                   DateFormat.yMMMd().format(_selectedDate ?? DateTime.now()),
-        //                                   style: GoogleFonts.poppins(color: AppColors.textDark),
-        //                                 ),
-        //                                 const Icon(Icons.calendar_month, color: AppColors.primaryBlue, size: 20),
-        //                               ],
-        //                             ),
-        //                           ),
-        //                         ),
-        //
-        //                         const SizedBox(height: 32),
-        //
-        //                         // Action Buttons
-        //                         Row(
-        //                           children: [
-        //                             Expanded(
-        //                               child: GradientButton(
-        //                                 onPressed: isUploading ? () {} : () {
-        //                                   final double distance = double.tryParse(_distanceInputController.text) ?? 0;
-        //                                   final int duration = int.tryParse(_timeInputController.text) ?? 0;
-        //                                   if (distance <= 0) {
-        //                                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Enter a valid distance")));
-        //                                     return;
-        //                                   }
-        //                                   appState.uploadActivity(distance, duration, _selectedDate ?? DateTime.now()).then((_) {
-        //                                     if (mounted) {
-        //                                       setState(() {
-        //                                         _showUploadForm = false;
-        //                                         _distanceInputController.clear();
-        //                                         _timeInputController.clear();
-        //                                       });
-        //                                       Navigator.of(dialogContext).pop();
-        //                                     }
-        //                                   });
-        //                                 },
-        //                                 disabled: isUploading,
-        //                                 gradient: glossyGradientDark,
-        //                                 borderRadius: 12,
-        //                                 child: Text(
-        //                                   isUploading ? "Uploading..." : "Save Activity",
-        //                                   style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-        //                                 ),
-        //                               ),
-        //                             ),
-        //                           ],
-        //                         ),
-        //                       ],
-        //                     ),
-        //                   ),
-        //                 ),
-        //               );
-        //             }
-        //         );
-        //       },
-        //     ).then((_) {
-        //       // Clear data when dialog is closed via barrier dismiss
-        //       if (mounted) {
-        //         setState(() {
-        //           _showUploadForm = false;
-        //           _distanceInputController.clear();
-        //           _timeInputController.clear();
-        //         });
-        //       }
-        //     });
-        //     setState(() { _showUploadForm = false; });
-        //   });
-        // }
-
     // Helper Widget for Input Fields to keep code clea
 
         return LayoutBuilder(
@@ -1412,13 +1479,13 @@
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Notifications!")));
                     },
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(right: 16.0),
-                    child: CircleAvatar(
-                      backgroundColor: AppColors.dividerColor,
-                      child: const Icon(Icons.person, color: AppColors.textMedium),
-                    ),
-                  ),
+                  // Padding(
+                  //   padding: const EdgeInsets.only(right: 16.0),
+                  //   child: CircleAvatar(
+                  //     backgroundColor: AppColors.dividerColor,
+                  //     child: const Icon(Icons.person, color: AppColors.textMedium),
+                  //   ),
+                  // ),
                 ],
               ),
               drawer: isLargeScreen ? null : _buildDrawer(context),
@@ -1428,161 +1495,11 @@
                   if (isLargeScreen) _buildSidebar(context),
                   Expanded(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 24.0), // Added horizontal padding here
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildWelcomeBanner(context, me, !isFreeUser), // Now directly in the body
-                          const SizedBox(height: 32), // Increased spacing for visual breathing room
-
-                          WeeklyStreakCard(activities: activities),
-
-                          const SizedBox(height: 32),
-
-                          WeeklyGoalTrackerCard(activities: activities, goals: appState.dailyGoals),
-
-                          const SizedBox(height: 32),
-
-                          if (isAdvancedUser) ...[
-                            Text(
-                              "Advanced Metrics",
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.bold, color: AppColors.textDark),
-                            ),
-                            const SizedBox(height: 20),
-                            VO2MaxCard(activities: activities),
-                            const SizedBox(height: 16),
-                            HRTrendCard(activities: activities),
-                            const SizedBox(height: 16),
-
-                            Text(
-                              "Your Tools",
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.bold, color: AppColors.textDark),
-                            ),
-                            const SizedBox(height: 20),
-                            _buildBasicFeaturesSection(context, latestActivity, me),
-                            const SizedBox(height: 32),
-
-                            Text(
-                              "Milestones ",
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.bold, color: AppColors.textDark),
-                            ),
-                            const SizedBox(height: 20),
-                            AchievementBadgesCard(activities: activities),
-                            const SizedBox(height: 32),
-
-                            DailyMotivationCard(name: me?.name ?? "Athlete"),
-                            const SizedBox(height: 32),
-                            Text(
-                              "AI Insights",
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.bold, color: AppColors.textDark),
-                            ),
-                            const UnifiedAIAnalysisCard(),
-                            const SizedBox(height: 32),
-
-                            Text(
-                              "Recent Activities",
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.bold, color: AppColors.textDark),
-                            ),
-                            const SizedBox(height: 20),
-                            _buildRecentActivityList(context, activities, isLoadingActivities),
-                          ],
-
-                          if (isFreeUser) ...[
-                            Text(
-                              "Your Tools",
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: AppColors.textDark),
-                            ),
-                            const SizedBox(height: 20),
-                            _buildBasicFeaturesSection(context, latestActivity, me), // This will be the glossy grid
-                            const SizedBox(height: 32),
-                            Text(
-                              "AI Insights",
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.bold, color: AppColors.textDark),
-                            ),
-                            const UnifiedAIAnalysisCard(),
-                            const SizedBox(height: 32),
-
-                            // Text(
-                            //   "AI Insights",
-                            //   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            //       fontWeight: FontWeight.bold, color: AppColors.textDark),
-                            // ),
-                            // const SizedBox(height: 20),
-                            // AIPlanRecommendationCard(
-                            //   onUpgradeTap: () => _navigateToUpgradeFlow(context),
-                            // ),
-                            // const SizedBox(height: 32),
-
-                            Text(
-                              "Recent Run Activities",
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: AppColors.textDark),
-                            ),
-                            const SizedBox(height: 20),
-                            _buildRecentActivityList(context, activities, isLoadingActivities), // Integrated list
-                            const SizedBox(height: 32),
-
-                            // _buildUpgradePlanSection(contazext), // Glossy upgrade section
-                          ]
-                          else if (isCoachUser) ...[
-                            Text(
-                              "Coach Assigned Workout",
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: AppColors.textDark),
-                            ),
-                            const SizedBox(height: 20),
-                            _buildTodayWorkoutSection( // Integrated "Today's Workout"
-                              context,
-                              todaysAssignment,
-                              todaysAssignedKm,
-                              todaysActualKm,
-                              todayProgressPct,
-                                  () {
-                                    _selectedDate = DateTime.now();
-                                    _distanceInputController.clear();
-                                    _timeInputController.clear();
-                                    _openUploadDialog();
-                              },
-                            ),
-                            const SizedBox(height: 32),
-
-                            Text(
-                              "Your Tools",
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: AppColors.textDark),
-                            ),
-                            const SizedBox(height: 20),
-                            _buildBasicFeaturesSection(context, latestActivity, me), // Glossy grid for premium users too
-                            const SizedBox(height: 32),
-
-                            Text(
-                              "Milestones ",
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.bold, color: AppColors.textDark),
-                            ),
-                            const SizedBox(height: 20),
-                            AchievementBadgesCard(activities: activities),
-                            const SizedBox(height: 32),
-
-                            DailyMotivationCard(name: me?.name ?? "Athlete"),
-                            const SizedBox(height: 32),
-
-
-
-                            // const UnifiedAIAnalysisCard(),
-                            // const SizedBox(height: 32),
-
-                            Text(
-                              "Recent Activities",
-                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: AppColors.textDark),
-                            ),
-                            const SizedBox(height: 20),
-                            _buildRecentActivityList(context, activities, isLoadingActivities), // Integrated list
-                          ]
-                        ],
+                      padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 24.0),
+                      child: _buildDashboardBody(
+                        context, me, assignments, activities, isLoadingActivities,
+                        isFreeUser, isAdvancedUser, isCoachUser, latestActivity,
+                        todaysAssignment, todaysAssignedKm, todaysActualKm, todayProgressPct,
                       ),
                     ),
                   ),
@@ -1605,41 +1522,19 @@
           child: Column(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
                 decoration: BoxDecoration(
                   color: AppColors.cardBackground,
                   border: Border(bottom: BorderSide(color: AppColors.dividerColor)),
                 ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        gradient: sidebarGradient,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Center(
-                        child: Text(
-                          "RC",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Text(
-                      "PeakForm",
-                      style: TextStyle(
-                        color: AppColors.textDark,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 60,
+                  child: const AppLogo(
+                    fit: BoxFit.contain,
+                    alignment: Alignment.centerLeft,
+                  ),
                 ),
               ),
               Expanded(
@@ -1685,7 +1580,16 @@
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => AthleteAssignmentsScreen(athleteId: athleteId),
+                              builder: (_) => AthleteAssignmentsScreen(
+                                athleteId: athleteId,
+                                activities: appState.activities   // ADD THIS
+                                    .map((a) => {
+                                  'distanceKm': a.distanceKm,
+                                  'durationMin': a.durationMin,
+                                  'date': a.date?.toIso8601String(),
+                                })
+                                    .toList(),
+                              ),
                             ),
                           );
                         },
@@ -1717,7 +1621,7 @@
                         },
                       ),
                     _DrawerItem(
-                      icon: Icons.settings,
+                      icon: Icons.person,
                       title: 'Settings',
                       onTap: () async {
                         await Navigator.push(
@@ -1738,6 +1642,12 @@
                         await Provider.of<AppState>(context, listen: false).refreshAll();
                       },
                     ),
+                    _DrawerItem(
+                      icon: Icons.logout_rounded,
+                      title: 'Logout',
+                      color: AppColors.accentRed,
+                      onTap: () => _logout(context),
+                    ),
                   ],
                 ),
               ),
@@ -1747,13 +1657,253 @@
       }
 
       Widget _buildWelcomeBanner(BuildContext context, Me? me, bool hasAdvancedPlan) {
+        final appState = Provider.of<AppState>(context);
+        final paymentStatus = appState.paymentStatus;
+        final rejectionReason = appState.rejectionReason;
+        final pendingPlanName = appState.pendingPlanName;
+
+        // ── PENDING state ──────────────────────────────────────────────────────────
+        if (paymentStatus == 'pending_review') {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFF59E0B), Color(0xFFE65100)],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFF59E0B).withOpacity(0.35),
+                  blurRadius: 15,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.hourglass_top_rounded,
+                          color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Payment Under Review',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Welcome, ${me?.name ?? "Athlete"}! 👋',
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Your payment receipt for $pendingPlanName is being reviewed by our team.\n We\'ll activate your plan shortly.',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: Colors.white.withOpacity(0.9),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.email_outlined,
+                          color: Colors.white, size: 14),
+                      const SizedBox(width: 6),
+                      Text(
+                        'if you have queries reach us out admin@endurepeak.com',
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // ── REJECTED state ─────────────────────────────────────────────────────────
+        if (paymentStatus == 'rejected') {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFE74C3C), Color(0xFFC0392B)],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFE74C3C).withOpacity(0.35),
+                  blurRadius: 15,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.cancel_outlined,
+                          color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Payment Not Verified',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Hello, ${me?.name ?? "Athlete"} 👋',
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Your payment receipt for $pendingPlanName could not be verified.',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: Colors.white.withOpacity(0.9),
+                    height: 1.5,
+                  ),
+                ),
+                if (rejectionReason.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Reason:',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white.withOpacity(0.8),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          rejectionReason,
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            color: Colors.white,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                // Re-upload CTA
+                GestureDetector(
+                  onTap: () => _navigateToUpgradeFlow(context),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(25),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.15),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.upload_rounded,
+                            color: Color(0xFFE74C3C), size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Re-upload Receipt',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFFE74C3C),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // ── NORMAL state (existing code) ───────────────────────────────────────────
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           width: double.infinity,
           padding: const EdgeInsets.all(28.0),
           decoration: BoxDecoration(
             gradient: welcomeBannerGradient,
-            borderRadius: BorderRadius.circular(20), // More rounded for modern look
+            borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
                 color: AppColors.primaryBlue.withOpacity(0.3),
@@ -1781,7 +1931,6 @@
                       fontWeight: FontWeight.bold,
                       color: Colors.white),
                 ),
-                // Only show coach name for coach plan users
                 if (['5K', '10K', '21.1K', '42.2K', '50K'].contains(me?.plan)) ...[
                   const SizedBox(height: 4),
                   Text(
@@ -1808,7 +1957,8 @@
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
                   borderRadius: 25.0,
                   child: Text(
                     "Upgrade your plan",
@@ -1834,7 +1984,7 @@
             'title': "Connect Strava",
             'subtitle': stravaConnected ? "✓ Connected · View runs" : "Sync your runs"},
           // {'icon': Icons.watch, 'title': "Smartwatch Sync", 'subtitle': "Connect your device"},
-          {'icon': Icons.upload_file, 'title': "Manual Upload", 'subtitle': "Log a new activity"},
+          {'icon': Icons.upload_file, 'title': "Manual Activity", 'subtitle': "Log a new activity"},
           {'icon': Icons.speed, 'title': "Activity History", 'subtitle': "Track your running progress"},
           {'icon': Icons.flag, 'title': "Race Predictor", 'subtitle': "Estimate race times"},
           {'icon': Icons.monitor_heart, 'title': "HR Zone", 'subtitle': "Optimize heart rate"},
@@ -1854,7 +2004,7 @@
             VoidCallback onTap;
             if (feature['title'] == "Smartwatch Sync") {
               onTap = () => _showSmartwatchConnectDialog(context);
-            } else if (feature['title'] == "Manual Upload") {
+            } else if (feature['title'] == "Manual Activty") {
               onTap = () {
                 _selectedDate = DateTime.now();
                 _distanceInputController.clear();
@@ -2039,47 +2189,21 @@
           child: ListView(
             padding: EdgeInsets.zero,
             children: <Widget>[
-              DrawerHeader(
+              // In _buildDrawer logo container:
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
                 decoration: BoxDecoration(
                   color: AppColors.cardBackground,
                   border: Border(bottom: BorderSide(color: AppColors.dividerColor)),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            gradient: sidebarGradient,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Center(
-                            child: Text(
-                              "RC",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          "PeakForm",
-                          style: TextStyle(
-                            color: AppColors.textDark,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 60,
+                  child: const AppLogo(
+                    fit: BoxFit.contain,
+                    alignment: Alignment.centerLeft,
+                  ),
                 ),
               ),
               _DrawerItem(
@@ -2175,6 +2299,15 @@
                   await appState.refreshAll();
                 },
               ),
+              _DrawerItem(
+                icon: Icons.logout_rounded,
+                title: 'Logout',
+                color: AppColors.accentRed,
+                onTap: () {
+                  Navigator.pop(context); // close drawer first
+                  _logout(context);
+                },
+              ),
             ],
           ),
         );
@@ -2264,7 +2397,7 @@
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        "$progressPct%",
+                        hasAssignment ? "$progressPct%" : "--",
                         style: GoogleFonts.poppins(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
@@ -2294,7 +2427,7 @@
                   child: LinearProgressIndicator(
                     value: displayAssignedKm > 0
                         ? (todaysActualKm / displayAssignedKm).clamp(0.0, 1.0)
-                        : (todaysActualKm > 0 ? 1.0 : 0.0),
+                        : 0.0,
                     minHeight: 8,
                     backgroundColor: Colors.white.withOpacity(0.25),
                     valueColor: AlwaysStoppedAnimation<Color>(
@@ -2305,15 +2438,27 @@
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  progressPct >= 100
-                      ? "Target achieved! 🎯"
-                      : "You've completed $progressPct% of today's target",
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    color: Colors.white.withOpacity(0.9),
-                    fontWeight: FontWeight.w500,
-                  ),
+                Builder(
+                  builder: (context) {
+                    String progressMessage;
+                    if (!hasAssignment) {
+                      progressMessage = todaysActualKm > 0
+                          ? "Independent run logged 🏃"
+                          : "No workout assigned today";
+                    } else if (progressPct >= 100) {
+                      progressMessage = "Target achieved! 🎯";
+                    } else {
+                      progressMessage = "You've completed $progressPct% of today's target";
+                    }
+                    return Text(
+                      progressMessage,
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.9),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    );
+                  },
                 ),
 
                 const SizedBox(height: 16),
@@ -2533,7 +2678,7 @@
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          "Tap 'Manual Upload' or sync Strava to add one!",
+                          "Tap 'Manual Activity' or sync Strava to add one!",
                           textAlign: TextAlign.center,
                           style: GoogleFonts.poppins(
                               fontSize: 12, color: AppColors.textLight),
@@ -2544,6 +2689,326 @@
                 ),
             ],
           ),
+        );
+      }
+
+      Widget _buildDashboardBody(
+          BuildContext context,
+          Me? me,
+          List<Assignment> assignments,
+          List<Activity> activities,
+          bool isLoadingActivities,
+          bool isFreeUser,
+          bool isAdvancedUser,
+          bool isCoachUser,
+          Activity? latestActivity,
+          Assignment todaysAssignment,
+          double todaysAssignedKm,
+          double todaysActualKm,
+          int todayProgressPct,
+          ) {
+        final appState = Provider.of<AppState>(context);
+
+        // ── Today's activities (for the "Recent Activities" section) ──────────
+        final today = DateTime.now();
+        final todayActivities = activities.where((a) {
+          if (a.date == null) return false;
+          return a.date!.year == today.year &&
+              a.date!.month == today.month &&
+              a.date!.day == today.day;
+        }).toList();
+
+        // ── This week's totals (for the Goal Tracker section) ──────────────────
+        final monday = getStartOfWeek(today);
+        final sunday = monday.add(const Duration(days: 6));
+        final weekActivities = activities.where((a) {
+          if (a.date == null) return false;
+          return a.date!.isAfter(monday.subtract(const Duration(seconds: 1))) &&
+              a.date!.isBefore(sunday.add(const Duration(days: 1)));
+        }).toList();
+        final weekTotalKm = weekActivities.fold<double>(0, (s, a) => s + (a.distanceKm ?? 0));
+        final weekTotalMin = weekActivities.fold<int>(0, (s, a) => s + (a.durationMin ?? 0));
+        final weeklyGoal = appState.dailyGoals.firstWhere(
+              (g) => getStartOfWeek(g.date) == monday,
+          orElse: () => DailyGoal(date: monday),
+        );
+
+        // ── Tools grid data (same features/handlers as _buildBasicFeaturesSection) ─
+        final stravaConnected = appState.stravaConnected;
+        final toolsFeatures = <Map<String, dynamic>>[
+          {
+            'icon': Icons.link,
+            'title': 'Connect Strava',
+            'subtitle': stravaConnected ? '✓ Connected' : 'Sync your runs',
+            'onTap': () => _connectStrava(context),
+          },
+          {
+            'icon': Icons.upload_file,
+            'title': 'Manual Activity',
+            'subtitle': 'Log a new activity',
+            'onTap': () {
+              _selectedDate = DateTime.now();
+              _distanceInputController.clear();
+              _timeInputController.clear();
+              _openUploadDialog();
+            },
+          },
+          {
+            'icon': Icons.speed,
+            'title': 'Activity History',
+            'subtitle': 'Track your progress',
+            'onTap': () {
+              final athleteId = me?.id;
+              if (athleteId != null) {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (context) => AthletePaceCalculatorScreen(athleteId: athleteId),
+                ));
+              }
+            },
+          },
+          {
+            'icon': Icons.flag,
+            'title': 'Race Predictor',
+            'subtitle': 'Estimate race times',
+            'onTap': () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (context) => AthleteScreenRacePredictor(
+                distance: latestActivity?.distanceKm ?? 0,
+                duration: latestActivity?.durationMin ?? 0,
+              ),
+            )),
+          },
+          {
+            'icon': Icons.monitor_heart,
+            'title': 'HR Zone',
+            'subtitle': 'Optimize heart rate',
+            'onTap': () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (context) => HRZoneCalculatorScreen(dateOfBirth: me?.dateOfBirth),
+            )),
+          },
+        ];
+
+        // ── Milestone badges (same logic as AchievementBadgesCard) ─────────────
+        final totalDist = activities.fold<double>(0, (s, a) => s + (a.distanceKm ?? 0));
+        final hasActivity = activities.isNotEmpty;
+        final hasLongRun = activities.any((a) => (a.distanceKm ?? 0) >= 10);
+        final hasFastPace = activities.any((a) {
+          if ((a.distanceKm ?? 0) <= 0 || (a.durationMin ?? 0) <= 0) return false;
+          final paceSec = (a.durationMin! * 60) / a.distanceKm!;
+          return paceSec <= 300;
+        });
+        final hasEarlyRun = activities.any((a) => a.date != null && a.date!.hour < 7);
+        final hasNightRun = activities.any((a) => a.date != null && a.date!.hour >= 21);
+        final has100km = totalDist >= 100;
+
+        final milestoneBadges = <Map<String, dynamic>>[
+          {'icon': Icons.emoji_events, 'label': 'First 10K', 'earned': hasLongRun, 'color': const Color(0xFFF7941D)},
+          {'icon': Icons.bolt, 'label': 'Sub-5 Pace', 'earned': hasFastPace, 'color': const Color(0xFF2575FC)},
+          {'icon': Icons.wb_sunny_outlined, 'label': 'Early Bird', 'earned': hasEarlyRun, 'color': const Color(0xFFF7C31D)},
+          {'icon': Icons.hiking, 'label': 'First Run', 'earned': hasActivity, 'color': const Color(0xFF2ECC71)},
+          {'icon': Icons.social_distance, 'label': '100km Club', 'earned': has100km, 'color': const Color(0xFF1ABC9C)},
+          {'icon': Icons.nightlight_round, 'label': 'Night Runner', 'earned': hasNightRun, 'color': const Color(0xFF34495E)},
+        ];
+        final earnedCount = milestoneBadges.where((b) => b['earned'] == true).length;
+
+        // ── Motivation quote ─────────────────────────────────────────────────
+        const motivations = [
+          "The only bad workout is the one that didn't happen. You showed up — that already puts you ahead.",
+          "Every kilometre you run today is a kilometre your future self will thank you for.",
+          "Progress isn't always visible day to day — but it's always happening. Keep going.",
+          "Champions aren't made in gyms. They're made from something deep inside them — a desire, a dream.",
+          "Your legs will do what your mind believes. Believe in the run today.",
+          "The pain you feel today will be the strength you feel tomorrow.",
+          "Consistency beats perfection every single time. One more run, one more step forward.",
+        ];
+        final motivationQuote = motivations[(DateTime.now().weekday - 1) % motivations.length];
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Always visible: welcome banner ─────────────────────────────────
+            _buildWelcomeBanner(context, me, !isFreeUser),
+            const SizedBox(height: 20),
+
+            // ── Weekly Streak — collapsible, default open ───────────────────────
+            // ── Today's Motivation — full gradient card ──────────────────────────
+            if (isAdvancedUser || isCoachUser) ...[
+              DailyMotivationCard(name: me?.name ?? "Athlete"),
+              const SizedBox(height: 12),
+            ],
+
+// ── Weekly Streak — full gradient card ────────────────────────────────
+            WeeklyStreakCard(activities: activities),
+            const SizedBox(height: 12),
+
+            // ── Always visible: today's headline card (coach plan only) ────────
+            if (isCoachUser) ...[
+              _buildTodayWorkoutSection(
+                context,
+                todaysAssignment,
+                todaysAssignedKm,
+                todaysActualKm,
+                todayProgressPct,
+                    () {
+                  _selectedDate = DateTime.now();
+                  _distanceInputController.clear();
+                  _timeInputController.clear();
+                  _openUploadDialog();
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // ── Weekly Goal — collapsible, default open ──────────────────────────
+            CollapsibleSection(
+              sectionId: 'weekly_goal',
+              title: 'Weekly Goal',
+              icon: Icons.flag_rounded,
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1976D2), Color(0xFFE6783A)],
+              ),
+              initiallyExpanded: true,
+              summary: '${weekTotalKm.toStringAsFixed(1)} km logged this week',
+              child: CompactGoalTracker(
+                totalKm: weekTotalKm,
+                totalMin: weekTotalMin,
+                weeklyGoal: weeklyGoal,
+                onSetGoal: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SetGoalsCalendarScreen()),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ── Advanced Metrics — collapsible, default CLOSED (advanced plan) ──
+            if (isAdvancedUser) ...[
+              CollapsibleSection(
+                sectionId: 'advanced_metrics',
+                title: 'Advanced Metrics',
+                icon: Icons.monitor_heart_outlined,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1976D2), Color(0xFFE6783A)],
+                ),
+                initiallyExpanded: false,
+                summary: 'VO2 Max · Heart Rate trends',
+                child: const Column(
+                  children: [
+                    CompactWatchPrompt(
+                        message: 'Connect your smartwatch to unlock VO2 Max estimation'),
+                    SizedBox(height: 10),
+                    CompactWatchPrompt(
+                        message: 'Connect your smartwatch to see Heart Rate trends and zones'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // ── Your Tools — collapsible, default CLOSED ─────────────────────────
+            CollapsibleSection(
+              sectionId: 'your_tools',
+              title: 'Your Tools',
+              icon: Icons.apps_rounded,
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1976D2), Color(0xFFE6783A)],
+              ),
+              initiallyExpanded: false,
+              summary: '${toolsFeatures.length} tools available',
+              child: CompactToolsGrid(features: toolsFeatures),
+            ),
+            const SizedBox(height: 12),
+
+            // ── Milestones — collapsible, default CLOSED ─────────────────────────
+            if (isAdvancedUser || isCoachUser) ...[
+              CollapsibleSection(
+                sectionId: 'milestones',
+                title: 'Milestones',
+                icon: Icons.emoji_events_outlined,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1976D2), Color(0xFFE6783A)],
+                ),
+                initiallyExpanded: false,
+                summary: '$earnedCount of ${milestoneBadges.length} earned',
+                child: CompactMilestones(badges: milestoneBadges),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // ── AI Insights — kept as its own existing widget, just no header text ─
+            if (isFreeUser || isAdvancedUser) ...[
+              CollapsibleSection(
+                sectionId: 'ai_insights',
+                title: 'AI Insights',
+                icon: Icons.insights_rounded,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1976D2), Color(0xFFE6783A)],
+                ),
+                initiallyExpanded: true,
+                child: const UnifiedAIAnalysisCard(),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // ── Recent / Today's Activities — collapsible, default open ──────────
+            CollapsibleSection(
+              sectionId: 'recent_activities',
+              title: isFreeUser ? 'Recent Run Activities' : "Today's Runs",
+              icon: Icons.directions_run_rounded,
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1976D2), Color(0xFFE6783A)],
+              ),
+              initiallyExpanded: true,
+              summary: '${todayActivities.length} logged today',
+              child: isLoadingActivities
+                  ? const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Center(child: CircularProgressIndicator(color: Color(0xFF1976D2))),
+              )
+                  : todayActivities.isEmpty
+                  ? Padding(
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                child: Column(
+                  children: [
+                    Icon(Icons.directions_run, size: 34, color: Colors.grey.shade300),
+                    const SizedBox(height: 10),
+                    Text("No runs logged today.",
+                        style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textMedium)),
+                    const SizedBox(height: 4),
+                    Text("Tap 'Manual Activity' or sync Strava to add one!",
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(fontSize: 11.5, color: AppColors.textLight)),
+                  ],
+                ),
+              )
+                  : Column(
+                children: todayActivities.asMap().entries.map((entry) {
+                  final a = entry.value;
+                  final isLast = entry.key == todayActivities.length - 1;
+                  String paceStr = '—';
+                  final dist = a.distanceKm ?? 0;
+                  final dur = a.durationMin ?? 0;
+                  if (dist > 0 && dur > 0) {
+                    final totalSec = (dur * 60) / dist;
+                    final mins = totalSec ~/ 60;
+                    final secs = (totalSec % 60).round();
+                    paceStr = '$mins:${secs.toString().padLeft(2, '0')} /km';
+                  }
+                  return CompactActivityRow(
+                    title: _getActivityTitle(a),
+                    timeLabel: a.date != null ? DateFormat.jm().format(a.date!) : '—',
+                    distanceLabel: '${a.distanceKm?.toStringAsFixed(2) ?? "0.00"} km',
+                    durationLabel: '${a.durationMin?.round() ?? 0} min',
+                    paceLabel: paceStr,
+                    isFromStrava: a.isFromStrava,
+                    isLast: isLast,
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
         );
       }
 
@@ -2767,23 +3232,28 @@
       final String title;
       final VoidCallback onTap;
       final bool isSelected;
+      final Color? color; // NEW: optional override, e.g. red for Logout
 
       const _DrawerItem({
         required this.icon,
         required this.title,
         required this.onTap,
         this.isSelected = false,
+        this.color,
       });
 
       @override
       Widget build(BuildContext context) {
+        final iconColor = color ?? (isSelected ? Colors.white : AppColors.textMedium);
+        final textColor = color ?? (isSelected ? Colors.white : AppColors.textDark);
+
         return Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           decoration: isSelected
               ? BoxDecoration(
-            gradient: sidebarGradient, // Use consistent gradient
-            borderRadius: BorderRadius.circular(12), // More rounded for selected state
-            boxShadow: [ // Subtle shadow for selected item
+            gradient: sidebarGradient,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
               BoxShadow(
                 color: AppColors.primaryPurple.withOpacity(0.2),
                 blurRadius: 8,
@@ -2793,17 +3263,13 @@
           )
               : null,
           child: ListTile(
-            leading: Icon(
-              icon,
-              color: isSelected ? Colors.white : AppColors.textMedium,
-              size: 26, // Slightly larger icon
-            ),
+            leading: Icon(icon, color: iconColor, size: 26),
             title: Text(
               title,
               style: TextStyle(
-                color: isSelected ? Colors.white : AppColors.textDark,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500, // Bolder for selected
-                fontSize: 17, // Slightly larger text
+                color: textColor,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                fontSize: 17,
               ),
             ),
             onTap: onTap,
@@ -4135,7 +4601,7 @@
               ),
               const SizedBox(height: 10),
               Text(
-                "— Your PeakForm · $today",
+                "— Your endurepeak · $today",
                 style: GoogleFonts.poppins(
                     fontSize: 12,
                     color: Colors.white.withOpacity(0.65)),
@@ -4775,8 +5241,6 @@
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.directions_run,
-                  size: 10, color: Color(0xFFFC4C02)),
               const SizedBox(width: 3),
               Text(
                 'Strava',

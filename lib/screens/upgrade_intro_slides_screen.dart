@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:runcoach/screens/select_plan_screen.dart'; // Import your SelectPlanScreen
+import '../screens/select_plan_screen.dart'; // Import your SelectPlanScreen
 
 class UpgradeIntroSlidesScreen extends StatefulWidget {
   const UpgradeIntroSlidesScreen({super.key});

@@ -14,6 +14,7 @@ import '../widgets/assign_workout_bottom_sheet.dart';
 import '../config/api_config.dart'; // adjust path as needed'
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'landing_screen.dart';
 
 // ── App-wide gradient palette ────────────────────────────────────────────────
 const _kGradientStart = Color(0xFF1976D2);
@@ -269,6 +270,42 @@ class _CoachDashboardState extends State<CoachDashboard> {
     );
   }
 
+  Future<void> _logout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Logout', style: TextStyle(fontWeight: FontWeight.w700)),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE74C3C),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              elevation: 0,
+            ),
+            child: const Text('Logout', style: TextStyle(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout != true) return;
+    await AuthStorageService.clearAuthData();
+    if (!mounted) return;
+
+    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LandingScreen()),
+          (route) => false,
+    );
+  }
+
   Future<void> _openMessages(Athlete athlete) async {
     final authData = await AuthStorageService.getAuthData();
     final String coachId = authData['coachId'] ?? '';
@@ -476,26 +513,30 @@ class _CoachDashboardState extends State<CoachDashboard> {
             onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Showing Notifications'))),
           ),
-          IconButton(
-            icon: Icon(Icons.person_outline, color: colorScheme.onBackground),
-            onPressed: () async {
-              await Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => ProfileSettingsScreen(
-                  isCoach: _isCurrentUserCoach,
-                  userJson: _coachJson,
-                ),
-              ));
-              if (!mounted) return;
-              // Refetch so the dashboard shows the latest coach profile
-              await _fetchCoachProfile();
-            },
-          ),
+          // IconButton(
+          //   icon: Icon(Icons.person_outline, color: colorScheme.onBackground),
+          //   onPressed: () async {
+          //     await Navigator.of(context).push(MaterialPageRoute(
+          //       builder: (_) => ProfileSettingsScreen(
+          //         isCoach: _isCurrentUserCoach,
+          //         userJson: _coachJson,
+          //       ),
+          //     ));
+          //     if (!mounted) return;
+          //     // Refetch so the dashboard shows the latest coach profile
+          //     await _fetchCoachProfile();
+          //   },
+          // ),
         ],
       ),
       drawer: CoachDrawer(
         onTabSelected:        _onTabSelected,
         currentTab:           _selectedTab,
         pendingMessagesCount: _unreadMessageCount,
+        onLogout:             _logout,
+        isCurrentUserCoach:   _isCurrentUserCoach,   // ← add
+        coachJson:            _coachJson,             // ← add
+        onProfileUpdated:     _fetchCoachProfile,     // ← add
       ),
       body: Container(
         color: Colors.white,
@@ -508,75 +549,105 @@ class _CoachDashboardState extends State<CoachDashboard> {
               children: [
                 if (_selectedTab == 'dashboard') ...[
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 24.0),
-                    child: Text(
-                      'Manage your athletes and track their progress',
-                      style: textTheme.titleMedium?.copyWith(
-                          color:
-                          colorScheme.onBackground.withOpacity(0.7)),
+                    padding: const EdgeInsets.only(bottom: 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Hello, ${_coachJson['name'] ?? 'Coach'} 👋',
+                          style: textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: colorScheme.onBackground,
+                            fontSize: 18,
+                          ),
+                        ),
+
+                        const SizedBox(height: 4),
+
+                        Text(
+                          'Manage your athletes and track their progress',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onBackground.withOpacity(0.65),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
 
                   // ── Summary cards ────────────────────────────────────
-                  Row(children: [
-                    Expanded(
-                      child: _GradientCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment:
-                              MainAxisAlignment.spaceBetween,
+                  // Replace the existing Row(children: [...]) summary cards with:
+
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _GradientCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Flexible(
-                                  child: Text('Total Athletes',
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Total Athletes',
                                       style: TextStyle(
-                                          color: Colors.white70,
-                                          fontWeight: FontWeight.w600)),
+                                        color: Colors.white70,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    const Icon(Icons.people, color: Colors.white, size: 20),
+                                  ],
                                 ),
-                                const Icon(Icons.people,
-                                    color: Colors.white, size: 20),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _athletes.length.toString(),
+                                  style: textTheme.headlineMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
                               ],
                             ),
-                            const SizedBox(height: 8),
-                            Text(_athletes.length.toString(),
-                                style: textTheme.headlineMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white)),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _GradientCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment:
-                              MainAxisAlignment.spaceBetween,
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _GradientCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Flexible(
-                                  child: Text('Pending Messages',
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Unread Messages',          // ← shortened so it never wraps
                                       style: TextStyle(
-                                          color: Colors.white70,
-                                          fontWeight: FontWeight.w600)),
+                                        color: Colors.white70,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    const Icon(Icons.message, color: Colors.white, size: 20),
+                                  ],
                                 ),
-                                const Icon(Icons.message,
-                                    color: Colors.white, size: 20),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _unreadMessageCount.toString(),
+                                  style: textTheme.headlineMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
                               ],
                             ),
-                            const SizedBox(height: 8),
-                            Text(_unreadMessageCount.toString(),
-                                style: textTheme.headlineMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white)),
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                  ]),
+                  ),
 
                   const SizedBox(height: 24),
 
@@ -676,20 +747,20 @@ class _CoachDashboardState extends State<CoachDashboard> {
                                             value: 'all',
                                             child: Text('All Plans')),
                                         DropdownMenuItem(
-                                            value: '5km',
+                                            value: '5k',
                                             child: Text('5km')),
                                         DropdownMenuItem(
-                                            value: '10km',
+                                            value: '10k',
                                             child: Text('10km')),
                                         DropdownMenuItem(
-                                            value: 'Half Marathon',
+                                            value: '21.1k',
                                             child: Text(
-                                                'Half Marathon')),
+                                                '21.1k')),
                                         DropdownMenuItem(
-                                            value: 'Marathon',
-                                            child: Text('Marathon')),
+                                            value: '42.2k',
+                                            child: Text('42.2k')),
                                         DropdownMenuItem(
-                                            value: '50km',
+                                            value: '50k',
                                             child: Text('50km')),
                                       ],
                                       onChanged: (v) => setState(
@@ -805,17 +876,19 @@ class _CoachDashboardState extends State<CoachDashboard> {
                                             ),
                                         unreadCount: _unreadCache[athlete.id] ?? 0,
                                         refreshKey: _refreshKey,
-                                        onTap: () =>
-                                            Navigator.of(context).push(
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    AthleteDetailsScreen(
-                                                      athleteId:
-                                                      athlete.id,
-                                                      athlete: athlete,
-                                                    ),
+                                        onTap: () async {
+                                          await Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (_) => AthleteDetailsScreen(
+                                                athleteId: athlete.id,
+                                                athlete: athlete,
                                               ),
                                             ),
+                                          );
+                                          if (!mounted) return;
+                                          setState(() => _refreshKey++);   // forces the tile to reload its summary
+                                          _fetchPerformanceLevels();        // refreshes the badge + status-filter cache too
+                                        },
                                         onAssign:  () =>
                                             _openAssignSheet(athlete),
                                         onMessage: () =>

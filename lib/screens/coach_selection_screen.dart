@@ -98,11 +98,11 @@ class _CoachSelectionScreenState
   String _mapPlanToSpecialization(String? plan) {
     if (plan == null) return '';
     final mapping = {
-      '5km':    '5km',
-      '10km':   '10km',
-      '21.1km': 'half marathon',
-      '42.2km': 'marathon',
-      '50km':   'ultra marathon',
+      '5k':    '5km',
+      '10k':   '10km',
+      '21.1k': 'Half Marathon',
+      '42.2k': 'Marathon',
+      '50k':   'Ultra Marathon',
     };
     return mapping[plan.toLowerCase()] ?? plan.toLowerCase();
   }
@@ -124,6 +124,7 @@ class _CoachSelectionScreenState
             planName: '${widget.selectedPlanDistance} Coach Plan',
             price: price,
             coachName: _selectedCoachName,
+            coachId: _selectedCoachId,
             onPaymentSuccess: _updateCoachAndPlanInDB,
           ),
         ),
@@ -160,7 +161,8 @@ class _CoachSelectionScreenState
             specs.any((s) => s.contains(term)) ||
             bio.contains(term);
 
-        final mapped   = _mapPlanToSpecialization(widget.selectedPlanDistance);
+        final mapped = _mapPlanToSpecialization(widget.selectedPlanDistance).toLowerCase();
+
         final offersPlan = specs.any((s) => s.toLowerCase().contains(mapped));
 
         return matchesSearch && offersPlan;

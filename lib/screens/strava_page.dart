@@ -75,7 +75,7 @@ class _StravaPageState extends State<StravaPage>
         title: Text('Disconnect Strava?',
             style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
         content: Text(
-            'Your Strava activities will no longer sync to PeakForm.',
+            'Your Strava activities will no longer sync to endurepeak.',
             style: GoogleFonts.poppins(fontSize: 14)),
         actions: [
           TextButton(
